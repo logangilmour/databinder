@@ -45,6 +45,8 @@
 (defn plit [val]
   (. ResourceFactory createPlainLiteral val))
 
+(defn uuid [] (res (str "urn:uuid:" (java.util.UUID/randomUUID))))
+
 (def db (uris "http://logangilmour.com/data-binder#" :root :binds :bindo :haschild :projects :list :paragraph :text-field))
 
 
@@ -53,23 +55,34 @@
    {:bind (fn [uri binding predicate meta vals]
             (hic/html [:p (:title meta)]
                       [:ol {:data-uri uri
+                            :data-predicate predicate
                             :data-binding binding
                             :data-description (:description meta)}
-                       (map (fn [val] [:li val]) vals)
+                       (map (fn [val] [:li (:html val) [:a.list-remove-binding
+                                               {:href "#"
+                                                :data-uri uri
+                                                :data-binding binding
+                                                :data-predicate predicate
+                                                :data-value (:uri val)} "X"]]) vals)
                        [:a.list-add-binding
                         {:href "#"
                          :data-uri uri
-                         :data-binding binding} "New!"]]))
+                         :data-binding binding
+                         :data-predicate predicate} "Create"]]))
 
-    :update (fn [reverse]
-              )}
+    :update (fn [uri pred data]
+              (cond (= (:type data) "add")
+                    {:type "create" :uri uri :predicate pred :value (uuid)}
+                    (= data "remove")
+                    {:type "remove" :uri uri :predicate pred :value (:value data)}))}
 
    (db :paragraph)
    {:bind (fn [uri binding predicate meta vals]
             (hic/html [:p {:data-uri uri
                            :data-binding binding
+                           :data-predicate predicate
                            :data-description (:description meta)}
-                       (:title meta) ": " vals]))
+                       (:title meta) ": " (map :html vals)]))
     :update nil}
 
    (db :text-field)
@@ -81,7 +94,7 @@
                                 :data-predicate predicate
                                 :data-binding binding
                                 :data-description (:description meta)
-                                :value (apply str vals)}]]))
+                                :value (apply str (map :html vals))}]]))
     :update (fn [uri pred data]
               {:type "update" :uri uri :predicate pred :value data})}})
 
@@ -117,6 +130,7 @@
   (or  (.getProperty model binding (prop (:binds db)))
        (.getProperty model binding (prop (:bindo db)))))
 
+
 (defn s-rec [binding model]
 
   (let [children (map (fn [val] (.asResource val))
@@ -142,13 +156,16 @@
               (.getURI binding)
               (.getURI (.getObject statement))
               meta-data
-              (if (empty? sub-calls)
-                (map literalize related)
-                (map seq (apply map vector (map (fn [sub-call]
-                                           (map
-                                            (partial sub-call data)
-                                            related))
-                                                sub-calls)))))))))
+              (map (fn [val] {:uri (first val) :html (second val)})
+                   (map vector
+                        (map #(.toString %) related) ;; TODO this is a little sketchy
+                        (if (empty? sub-calls)
+                          (map literalize related)
+                          (map seq (apply map vector (map (fn [sub-call]
+                                                            (map
+                                                             (partial sub-call data)
+                                                             related))
+                                                          sub-calls)))))))))))
 
 (defn select [model subject predicate object]
   (iterator-seq (.listStatements (new SimpleSelector subject predicate object))))
@@ -160,6 +177,8 @@
     (.add q-map "o" o)
     (.asUpdate (new ParameterizedSparqlString query q-map))
     ))
+
+
 
 (defn query-builder [command reversed]
 
@@ -178,30 +197,46 @@ INSERT { ?s ?p ?o }
 WHERE { ?s ?p ?old }"
                          (res (:uri command))
                          (prop (:predicate command))
-                         (plit (:value command))))))
+                         (plit (:value command))))
+        (= (:type command) "create")
+        (if reversed
+          (simple-update "INSERT DATA { ?s ?p ?o }"
+                         ()
+                         (prop (:predicate command))
+                         (res (:uri command)))
+          (simple-update "INSERT DATA { ?s ?p ?o }"
+                         (res (:uri command))
+                         (prop (:predicate command))
+                         (plit (:value command))))
+       ))
 
 (comment (if reversed
-                   "INSERT DATA { ?s ?p ?o }"
+
                    ))
+
+(defn get-all-bindings [inf predicate]
+  (concat (iterator-seq (.listResourcesWithProperty (prop (:binds db)) predicate))
+          (iterator-seq (.listResourcesWithProperty (prop (:bindo db)) predicate))))
+
 
 (defn editor [inf]
   (fn [model uri binding data]
     (let [statement (get-bound binding inf)
           func (:update (bound-func binding inf))
           binder (.getURI (.getPredicate statement))
-          pred (.getURI (.asResource (.getObject statement)))
+          predicate (.asResource (.getObject statement))
+          bindings (get-all-bindings inf predicate)
+          pred (.getURI predicate)
           resource (res uri)
-          new-resource (res (str "urn:uuid:" (java.util.UUID/randomUUID)))
           reverse (= binder (db :binds))
-
           graph-store (. GraphStoreFactory create model)
+          command (func uri pred data)
+          update (query-builder command reverse)
           ]
 
-      (let [command (func uri pred data)
-            update (query-builder command reverse)]
-        (println "!!!!!!!! " update)
-        (. UpdateAction execute update graph-store)
-        command))))
+      (println "!!!!!!!! " update)
+      (. UpdateAction execute update graph-store)
+      command)))
 
 (defn serializer
   ([view-data]
