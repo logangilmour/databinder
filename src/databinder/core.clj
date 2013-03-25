@@ -47,11 +47,10 @@
 
 (defn uuid [] (str "urn:uuid:" (java.util.UUID/randomUUID)))
 
-(def db (uris "http://logangilmour.com/data-binder#" :rank :root :binds :bindo :deleter :haschild :projects :list :paragraph :text-field))
+(def db (uris "http://logangilmour.com/data-binder#" :rank :root :binds :bindo  :haschild :projects))
 
-
-(def functions
-  {(db :list)
+(def funcs
+  {:list
    {:resource (fn [uri binding meta vals]
                 (hic/html [:p (:title meta)]
                           [:ol.list-binding {:data-uri uri
@@ -66,9 +65,10 @@
              (hic/html [:li {:data-uri uri} val]))
 
     :update (fn [uri pred data]
-              {:type "create" :uri uri :predicate pred :value (uuid)})}
+              {:type "create" :uri uri :predicate pred :value (uuid)})
+    :type :relator}
 
-   (db :deleter)
+   :deleter
    {:resource (fn [uri binding meta vals]
                 (hic/html [:a.remove-binding
                                  {:href "#"
@@ -79,9 +79,10 @@
              val)
 
     :update (fn [uri pred data]
-              {:type "delete" :uri uri :predicate pred :value data})}
+              {:type "delete" :uri uri :predicate pred :value data})
+    :type :relator}
 
-   (db :paragraph)
+   :paragraph
    {:resource (fn [uri binding meta vals]
                 (hic/html [:p {:data-uri uri
                        :data-binding binding
@@ -89,9 +90,10 @@
                    (:title meta) ": " vals]))
     :value (fn [parent uri binding meta val]
              (hic/html val))
-    :update nil}
+    :update nil
+    :type :relator}
 
-   (db :text-field)
+   :text-field
    {:resource (fn [uri binding meta vals]
                 (hic/html [:label (str (:title meta) " ")
                    [:input {:type "text"
@@ -103,7 +105,16 @@
     :value (fn [parent uri binding meta val]
              (hic/html val))
     :update (fn [uri pred data]
-              {:type "update" :uri uri :predicate pred :value data})}})
+              {:type "update" :uri uri :predicate pred :value data})
+    :type :relator}
+   :h1
+   {:display (fn [meta vals]
+               (hic/html [:h1 vals]))
+    :type :container}})
+
+(def functions (apply assoc {} (flatten (map (fn [key] [(str "http://logangilmour.com/data-binder#" (name key)) (get funcs key)]) (keys funcs)))))
+
+(merge db (apply uris "http://logangilmour.com/data-binder#" (keys funcs)))
 
 
 (defn relator [statement model resource]
@@ -224,44 +235,52 @@
                                 "")))
                           (relate-right model (prop (:haschild db)) binding))
 
-        statement (get-bound binding model) ;; fuckery for binding
+        bindable (bound-func binding model)
 
-        parent-func (:resource (bound-func binding model)) ;; extraneous function getting
-        child-func (:value (bound-func binding model))
-
-        relation-getter (fn [data resource] (relator statement data resource)) ;; get the function that gets the children for this node, will be used to bulid the next value of tree-builder.
+        type (:type bindable)
 
         sub-calls (map (fn [child] (s-rec child model)) children) ;; make the next part of the tree
         meta-data (get-meta-data binding model)]
 
-    (fn [data child resource]
+    (cond (= type :relator)
+          (let [statement (get-bound binding model) ;; fuckery for binding
+                relation-getter (fn [data resource] (relator statement data resource))
+                child-func (:value bindable)
+                parent-func (:resource bindable)] ;; extraneous function getting]
+            (fn [data child resource]
 
-      (let [related (if child   ;; get sub-resources (a single one if partial rendering)
-                      (seq [child])
-                      (relation-getter data resource))
-            func (if child ;; get the bound function
-                   (fn [uri bind meta vals]
-                     (let [val (first vals)]
-                       (child-func
-                        uri (:uri val) bind meta (:html val))))
-                   (fn [uri bind meta vals]
-                     (parent-func
-                      uri bind meta
-                      (map (fn [val] (child-func
-                                     uri (:uri val) bind meta (:html val))) vals))))]
-        (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
-              (.getURI binding)
-              meta-data
-              (map (fn [val] {:uri (first val) :html (second val)})
-                   (map vector
-                        (map #(.toString %) related) ;; TODO this is a little sketchy
-                        (if (empty? sub-calls)
-                          (map literalize related)
-                          (map seq (apply map vector (map (fn [sub-call]
-                                                            (map
-                                                             (partial sub-call data nil)
-                                                             related))
-                                                          sub-calls)))))))))))
+              (let [related (if child   ;; get sub-resources (a single one if partial rendering)
+                              (seq [child])
+                              (relation-getter data resource))
+                    func (if child ;; get the bound function
+                           (fn [uri bind meta vals]
+                             (let [val (first vals)]
+                               (child-func
+                                uri (:uri val) bind meta (:html val))))
+                           (fn [uri bind meta vals]
+                             (parent-func
+                              uri bind meta
+                              (map (fn [val] (child-func
+                                             uri (:uri val) bind meta (:html val))) vals))))]
+                (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
+                      (.getURI binding)
+                      meta-data
+                      (map (fn [val] {:uri (first val) :html (second val)})
+                           (map vector
+                                (map #(.toString %) related) ;; TODO this is a little sketchy
+                                (if (empty? sub-calls)
+                                  (map literalize related)
+                                  (map seq (apply map vector (map (fn [sub-call]
+                                                                    (map
+                                                                     (partial sub-call data nil)
+                                                                     related))
+                                                                  sub-calls))))))))))
+          (= type :container)
+          (fn [data child resource]
+            (let [func (:display bindable)]
+              (func
+                  meta-data
+                  (map (fn [sub-call] (sub-call data nil resource)) sub-calls)))))))
 
 (defn select [model subject predicate object]
   (iterator-seq (.listStatements (new SimpleSelector subject predicate object))))
@@ -414,12 +433,18 @@ ex:person-list rdf:type data:list ;
                dc:title \"List of People\" ;
                dc:description \"A list of people contained within the application\" .
 
-ex:person-list data:haschild ex:person-name , ex:person-age , ex:pets-list ,  ex:person-deleter .
+ex:person-list data:haschild ex:person-name-container , ex:person-age , ex:pets-list ,  ex:person-deleter .
 
 ex:person-deleter rdf:type data:deleter ;
                   data:bindo rdf:type ;
                   dc:title \"Remove\" ;
                   dc:description \"Permanently delete a person from the database\" .
+
+ex:person-name-container
+  data:haschild ex:person-name ;
+  dc:title \"thing\" ;
+  dc:description \"stuff\" ;
+  rdf:type data:h1 .
 
 ex:person-name rdf:type data:text-field ;
                data:rank 5 ;
