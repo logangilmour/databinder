@@ -45,65 +45,78 @@
 (defn plit [val]
   (. ResourceFactory createPlainLiteral val))
 
-(defn uuid [] (res (str "urn:uuid:" (java.util.UUID/randomUUID))))
+(defn uuid [] (str "urn:uuid:" (java.util.UUID/randomUUID)))
 
-(def db (uris "http://logangilmour.com/data-binder#" :root :binds :bindo :haschild :projects :list :paragraph :text-field))
+(def db (uris "http://logangilmour.com/data-binder#" :rank :root :binds :bindo :deleter :haschild :projects :list :paragraph :text-field))
 
 
 (def functions
   {(db :list)
-   {:bind (fn [uri binding predicate meta vals]
-            (hic/html [:p (:title meta)]
-                      [:ol {:data-uri uri
-                            :data-predicate predicate
-                            :data-binding binding
-                            :data-description (:description meta)}
-                       (map (fn [val] [:li (:html val) [:a.list-remove-binding
-                                               {:href "#"
-                                                :data-uri uri
-                                                :data-binding binding
-                                                :data-predicate predicate
-                                                :data-value (:uri val)} "X"]]) vals)
-                       [:a.list-add-binding
-                        {:href "#"
-                         :data-uri uri
-                         :data-binding binding
-                         :data-predicate predicate} "Create"]]))
+   {:resource (fn [uri binding meta vals]
+                (hic/html [:p (:title meta)]
+                          [:ol.list-binding {:data-uri uri
+                                :data-binding binding
+                                :data-description (:description meta)}
+                           vals]
+                          [:a.list-add-binding
+                           {:href "#"
+                            :data-uri uri
+                            :data-binding binding} "Create"]))
+    :value (fn [parent uri binding meta val]
+             (hic/html [:li {:data-uri uri} val]))
 
     :update (fn [uri pred data]
-              (cond (= (:type data) "add")
-                    {:type "create" :uri uri :predicate pred :value (uuid)}
-                    (= data "remove")
-                    {:type "remove" :uri uri :predicate pred :value (:value data)}))}
+              {:type "create" :uri uri :predicate pred :value (uuid)})}
+
+   (db :deleter)
+   {:resource (fn [uri binding meta vals]
+                (hic/html [:a.remove-binding
+                                 {:href "#"
+                                  :data-uri uri
+                                  :data-binding binding
+                                  :data-value (apply str vals)} (:title meta)]))
+    :value (fn [parent uri binding meta val]
+             val)
+
+    :update (fn [uri pred data]
+              {:type "delete" :uri uri :predicate pred :value data})}
 
    (db :paragraph)
-   {:bind (fn [uri binding predicate meta vals]
-            (hic/html [:p {:data-uri uri
-                           :data-binding binding
-                           :data-predicate predicate
-                           :data-description (:description meta)}
-                       (:title meta) ": " (map :html vals)]))
+   {:resource (fn [uri binding meta vals]
+                (hic/html [:p {:data-uri uri
+                       :data-binding binding
+                       :data-description (:description meta)}
+                   (:title meta) ": " vals]))
+    :value (fn [parent uri binding meta val]
+             (hic/html val))
     :update nil}
 
    (db :text-field)
-   {:bind (fn [uri binding predicate meta vals]
-            (hic/html [:label (str (:title meta) " ")
-                       [:input {:type "text"
-                                :class "text-field-binding"
-                                :data-uri uri
-                                :data-predicate predicate
-                                :data-binding binding
-                                :data-description (:description meta)
-                                :value (apply str (map :html vals))}]]))
+   {:resource (fn [uri binding meta vals]
+                (hic/html [:label (str (:title meta) " ")
+                   [:input {:type "text"
+                            :class "text-field-binding"
+                            :data-uri uri
+                            :data-binding binding
+                            :data-description (:description meta)
+                            :value (apply str vals)}]]))
+    :value (fn [parent uri binding meta val]
+             (hic/html val))
     :update (fn [uri pred data]
               {:type "update" :uri uri :predicate pred :value data})}})
 
 
 (defn relator [statement model resource]
+
   (let [binder (.getURI (.getPredicate statement))]
     (if (= binder (db :binds))
       (iterator-seq (.listResourcesWithProperty model (prop (.getURI (.asResource (.getObject statement)))) resource ))
-      (iterator-seq (.listObjectsOfProperty model resource (prop (.getURI (.asResource (.getObject statement)))))))
+      (iterator-seq
+       (.listObjectsOfProperty model resource
+                               (prop
+                                (.getURI
+                                 (.asResource
+                                  (.getObject statement)))))))
     ))
 
 ;;TODO projectors url should bind itself some stuff so it knows its unique values and its name
@@ -114,8 +127,10 @@
         (.getObject
          (.getProperty model binding (prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))))))
 
-(defn literalize [literal]
-  (.getString (.asLiteral literal)))
+(defn literalize [res]
+  (if (.isLiteral res)
+    (.getString (.asLiteral res))
+    (.toString res)))
 
 (def dc (uris "http://purl.org/dc/elements/1.1/" :title :description))
 
@@ -131,30 +146,111 @@
        (.getProperty model binding (prop (:bindo db)))))
 
 
+;; take a thing and get its function
+;; are there sub-things? if so, get them and recurse
+;; if not, return the result of running the function on the thing and the empty list
+;;
+;; build a thing as we return up the tree.
+;; order things after we build them.
+
+;; necessary: bind:subject, bind:object, bind:order1 ... orderN, bind:haschild.
+
+;; bind:subject takes a function1 and a predicate and makes a function that takes an object and returns the result of calling the function1 on the right side of the predicate, filtered by object.
+;; bind:object ...
+;; bind:order takes a function and a
+
+;; take an object and a predicate and get the binding for that predicate and apply it to the object.
+
+;; a relation-function takes a resource and turns it into a function that takes a resource and turns it into a function... until strings.
+;; haschild: take a bunch of things and call tree-builder on them.
+
+
+
+
+;; The output point is when a function makes a function that returns strings.
+
+;; bind subject, object, and child are all bindings.
+
+;; haschild bind:object haschild
+
+;; Tree-builder algorithm:
+;; Takes an initial resource.
+;; Gets children by getting all properties of a type, then getting the bound functions for them, then , then
+;; recurses on children.
+;; returns aggregation of children run through the function for this resource.
+;; functions needed: make a sequence of children into a single thing, get the necessary children.
+;; haschild makes a function that returns the related values, while contains makes a function returns with the same values.
+
+;; tree builder takes a resource and a property.
+;; tree builder then gets all sub-resources pointed at by the property.
+;; tree builder orders those sub-resources.
+;; tree builder then runs the tree-ify function bound to the predicate on the resource and the children and returns the result.
+;; A binding function takes an object and a list of trees and makes a new tree with the object at the top.
+;; Each predicate that we follow in a tree has a binding function.
+;; A more complex tree of bindings
+
+
+;; tree-build starting from university of alberta, employee
+;; get a bunch of employees, including me
+;; tree-build on each of us for each predicate that matters. Is this by type? This is where recursive assembly comes in - building the right tree of tree-builders.
+;; sort the returned values by the bundled keys.
+;; apply the function for binding the employee relationship to the result of this map and the university.
+;; return
+
+;; parts definitely common to both: Ordering, getting all relations and then mapping a list of functions to them,
+
+;; Container: doesn't relate, just passes its values on to the next function.
+;; Projector: relates and recurses, but with a function that is somewhere else in the tree (no rendered children)
+;; Child: recurses and relates
+
+
+
+
+
+
+(defn relate-right [model predicate resource]
+  (iterator-seq (.listObjectsOfProperty model resource predicate)))
+
+(defn relate-left [model predicate resource]
+  (iterator-seq (.listResourcesWithProperty model predicate resource)))
+
+
 (defn s-rec [binding model]
 
-  (let [children (map (fn [val] (.asResource val))
-                      (iterator-seq (.listObjectsOfProperty
-                                     model
-                                     (.asResource binding)
-                                     (prop (:haschild db)))))
+  (let [children (sort-by (fn [resource]
+                            (let [p (.getProperty model resource (prop (:rank db)))]
+                              (if p
+                                (.getString (.asLiteral (.getObject p)))
+                                "")))
+                          (relate-right model (prop (:haschild db)) binding))
 
-        statement (get-bound binding model)
+        statement (get-bound binding model) ;; fuckery for binding
 
-        func (:bind (bound-func binding model))
+        parent-func (:resource (bound-func binding model)) ;; extraneous function getting
+        child-func (:value (bound-func binding model))
 
-        relation-getter (fn [data resource] (relator statement data resource))
+        relation-getter (fn [data resource] (relator statement data resource)) ;; get the function that gets the children for this node, will be used to bulid the next value of tree-builder.
 
-        sub-calls (map (fn [child] (s-rec child model)) children)
+        sub-calls (map (fn [child] (s-rec child model)) children) ;; make the next part of the tree
         meta-data (get-meta-data binding model)]
 
-    (fn [data resource]
+    (fn [data child resource]
 
-      (let [related (relation-getter data resource)]
-
-        (func (.getURI resource)
+      (let [related (if child   ;; get sub-resources (a single one if partial rendering)
+                      (seq [child])
+                      (relation-getter data resource))
+            func (if child ;; get the bound function
+                   (fn [uri bind meta vals]
+                     (let [val (first vals)]
+                       (child-func
+                        uri (:uri val) bind meta (:html val))))
+                   (fn [uri bind meta vals]
+                     (parent-func
+                      uri bind meta
+                      (map (fn [val] (child-func
+                                     uri (:uri val) bind meta (:html val))) vals))))]
+        (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
               (.getURI binding)
-              (.getURI (.getObject statement))
               meta-data
               (map (fn [val] {:uri (first val) :html (second val)})
                    (map vector
@@ -163,7 +259,7 @@
                           (map literalize related)
                           (map seq (apply map vector (map (fn [sub-call]
                                                             (map
-                                                             (partial sub-call data)
+                                                             (partial sub-call data nil)
                                                              related))
                                                           sub-calls)))))))))))
 
@@ -179,12 +275,12 @@
     ))
 
 
-
 (defn query-builder [command reversed]
-
   (cond (= (:type command) "update")
         (if reversed
           (simple-update "
+INSERT DATA {?s ?p ?o }
+
 DELETE { ?old ?p ?o }
 INSERT { ?s ?p ?o }
 WHERE { ?old ?p ?o }"
@@ -192,6 +288,8 @@ WHERE { ?old ?p ?o }"
                          (prop (:predicate command))
                          (res (:uri command)))
           (simple-update "
+INSERT DATA {?s ?p ?o }
+
 DELETE { ?s ?p ?old }
 INSERT { ?s ?p ?o }
 WHERE { ?s ?p ?old }"
@@ -201,13 +299,25 @@ WHERE { ?s ?p ?old }"
         (= (:type command) "create")
         (if reversed
           (simple-update "INSERT DATA { ?s ?p ?o }"
-                         ()
+                         (res (:value command))
                          (prop (:predicate command))
                          (res (:uri command)))
           (simple-update "INSERT DATA { ?s ?p ?o }"
                          (res (:uri command))
                          (prop (:predicate command))
-                         (plit (:value command))))
+                         (res (:value command))))
+
+        (= (:type command) "delete")
+        (if reversed
+          (simple-update "DELETE DATA { ?s ?p ?o }"
+                         (res (:value command))
+                         (prop (:predicate command))
+                         (res (:uri command)))
+          (simple-update "DELETE DATA { ?s ?p ?o }"
+                         (res (:uri command))
+                         (prop (:predicate command))
+                         (res (:value command))))
+
        ))
 
 (comment (if reversed
@@ -215,28 +325,9 @@ WHERE { ?s ?p ?old }"
                    ))
 
 (defn get-all-bindings [inf predicate]
-  (concat (iterator-seq (.listResourcesWithProperty (prop (:binds db)) predicate))
-          (iterator-seq (.listResourcesWithProperty (prop (:bindo db)) predicate))))
+  (concat (iterator-seq (.listStatements inf nil (prop (:binds db)) predicate))
+          (iterator-seq (.listStatements inf nil (prop (:bindo db)) predicate))))
 
-
-(defn editor [inf]
-  (fn [model uri binding data]
-    (let [statement (get-bound binding inf)
-          func (:update (bound-func binding inf))
-          binder (.getURI (.getPredicate statement))
-          predicate (.asResource (.getObject statement))
-          bindings (get-all-bindings inf predicate)
-          pred (.getURI predicate)
-          resource (res uri)
-          reverse (= binder (db :binds))
-          graph-store (. GraphStoreFactory create model)
-          command (func uri pred data)
-          update (query-builder command reverse)
-          ]
-
-      (println "!!!!!!!! " update)
-      (. UpdateAction execute update graph-store)
-      command)))
 
 (defn serializer
   ([view-data]
@@ -246,7 +337,7 @@ WHERE { ?s ?p ?old }"
                                                         (res (:root db))
                                                         (prop (:haschild db)))))]
 
-        (s-rec root inf)
+        (fn [data resource] ((s-rec root inf) data nil resource))
         ))
   ([view-data binding]
 
@@ -255,6 +346,56 @@ WHERE { ?s ?p ?old }"
         (s-rec binding inf)
         )))
 
+(defn editor [inf]
+  (fn [model uri binding data]
+    (let [statement (get-bound binding inf)
+          func (:update (bound-func binding inf))
+          binder (.getURI (.getPredicate statement))
+          predicate (.asResource (.getObject statement))
+          binders (get-all-bindings inf predicate)
+          bindings (map #(.getSubject %) binders)
+          views (map (partial serializer inf) bindings)
+          pred (.getURI predicate)
+          resource (res uri) ;;TODO HERE make a serializer for each binding, then use them to populate action with html if this is an htmlable type thing. Consider moving to a pure update based strategy, as then we don't need javascript that's so complicated on the client side. We just regenerate any part of the view that's changed at any time. However, this means things like chat-rooms are not really viable.
+          reverse (= binder (db :binds))
+          graph-store (. GraphStoreFactory create model)
+          command (func uri pred data)
+          update (query-builder command reverse)
+
+          ]
+
+
+      (println "!!!!!! " update " !!!!!!!!")
+      (. UpdateAction execute update graph-store)
+
+      (map (fn [binder]
+             (let [binding (.getSubject binder)
+                   reverse (= (.getURI (.getPredicate binder)) (db :binds))]
+
+              (dissoc
+               (cond
+                (or (= (:type command) "update") (= (:type command) "create"))
+                (assoc command
+                  :value
+                  ((serializer inf binding)
+                   model
+                   (if (= (:type command) "update")
+                     (plit (:value command))
+                     (res (:value command)))
+                   (res (:uri command)))
+                  :binding
+                  (.toString binding))
+
+                (= (:type command) "delete")
+                (assoc
+                    (if reverse
+                      (assoc command :uri (:value command) :value (:uri command))
+                      command)
+                  :binding (.toString binding))) :predicate)))
+           binders)
+
+
+      )))
 
 
 
@@ -273,14 +414,21 @@ ex:person-list rdf:type data:list ;
                dc:title \"List of People\" ;
                dc:description \"A list of people contained within the application\" .
 
-ex:person-list data:haschild ex:person-name , ex:person-age , ex:pets-list .
+ex:person-list data:haschild ex:person-name , ex:person-age , ex:pets-list ,  ex:person-deleter .
+
+ex:person-deleter rdf:type data:deleter ;
+                  data:bindo rdf:type ;
+                  dc:title \"Remove\" ;
+                  dc:description \"Permanently delete a person from the database\" .
 
 ex:person-name rdf:type data:text-field ;
+               data:rank 5 ;
                data:bindo ont:name ;
                dc:title \"Name\" ;
                dc:description \"The name of a person\" .
 
 ex:person-age rdf:type data:text-field ;
+              data:rank 4 ;
               data:bindo ont:age ;
               dc:title \"Age\" ;
               dc:description \"The age of a person\".
@@ -390,7 +538,7 @@ test:dave ont:haspet \"Monster\" ;
 
 (def data-model (to-model data))
 
-(def broadcast-channel (channel))
+(def broadcast-channel (permanent-channel))
 (def edit (editor (to-model example-view)))
 
 (defn store [message]
