@@ -11,11 +11,13 @@
    [compojure.route :as route]
    [hiccup.core :as hic]
    [databinder.query :as q]
+   [clojure.zip :as z]
+   [clojure.walk :as w]
    )
   (:import (com.hp.hpl.jena.rdf.model ModelFactory ResourceFactory Model SimpleSelector)
            (java.io ByteArrayInputStream)
-           (com.hp.hpl.jena.query QuerySolutionMap ParameterizedSparqlString)
-           (com.hp.hpl.jena.update GraphStoreFactory UpdateAction)))
+           (com.hp.hpl.jena.query QuerySolutionMap ParameterizedSparqlString QueryExecutionFactory)
+           (com.hp.hpl.jena.update GraphStoreFactory UpdateExecutionFactory)))
 
 
 
@@ -50,7 +52,26 @@
 (def db (uris "http://logangilmour.com/data-binder#" :rank :root :binds :bindo  :haschild :projects))
 
 (def funcs
-  {:list
+  {:projector
+   {:resource (fn [uri binding meta vals]
+                (hic/html [:a {:href uri} vals]))
+    :value identity
+    :update nil
+    :type :projector}
+   :column8
+   {:display (fn [meta vals]
+               (hic/html [:div.span8 vals]))
+    :type :container}
+   :column4
+   {:display (fn [meta vals]
+               (hic/html [:div.span4 vals]))
+    :type :container}
+   :row
+   {:display (fn [meta vals]
+               (hic/html [:div.row vals]))
+    :type :container}
+
+   :list
    {:resource (fn [uri binding meta vals]
                 (hic/html [:p (:title meta)]
                           [:ol.list-binding {:data-uri uri
@@ -275,6 +296,39 @@
                                                                      (partial sub-call data nil)
                                                                      related))
                                                                   sub-calls))))))))))
+          (= type :projector)
+          (let [statement (get-bound binding model) ;; fuckery for binding
+                relation-getter (fn [data resource] (relator statement data resource))
+                child-func (:value bindable)
+                parent-func (:resource bindable)] ;; extraneous function getting]
+            (fn [data child resource]
+
+              (let [related (if child   ;; get sub-resources (a single one if partial rendering)
+                              (seq [child])
+                              (relation-getter data resource))
+                    func (if child ;; get the bound function
+                           (fn [uri bind meta vals]
+                             (let [val (first vals)]
+                               (child-func
+                                uri (:uri val) bind meta (:html val))))
+                           (fn [uri bind meta vals]
+                             (parent-func
+                              uri bind meta
+                              (map (fn [val] (child-func
+                                             uri (:uri val) bind meta (:html val))) vals))))]
+                (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
+                      (.getURI binding)
+                      meta-data
+                      (map (fn [val] {:uri (first val) :html (second val)})
+                           (map vector
+                                (map #(.toString %) related) ;; TODO this is a little sketchy
+                                (if (empty? sub-calls)
+                                  (map literalize related)
+                                  (map seq (apply map vector (map (fn [sub-call]
+                                                                    (map
+                                                                     (partial sub-call data nil)
+                                                                     related))
+                                                                  sub-calls))))))))))
           (= type :container)
           (fn [data child resource]
             (let [func (:display bindable)]
@@ -290,52 +344,159 @@
     (.add q-map "s" s)
     (.add q-map "p" p)
     (.add q-map "o" o)
-    (.asUpdate (new ParameterizedSparqlString query q-map))
+    (.toString (new ParameterizedSparqlString query q-map))
     ))
 
+
+(defn flatten-seq [coll]
+  (reduce (fn [accum val]
+            (cond (seq? val)
+                  (vec (concat accum (flatten-seq val)))
+
+                  (vector? val)
+                  (conj accum (flatten-seq val))
+
+                  :default
+                  (conj accum val))) [] coll))
+
+(defn qb [binding model uri]
+
+    (let [children (relate-right model (prop (:haschild db)) binding)
+
+          bindable (bound-func binding model)
+
+          type (:type bindable)
+
+          subs (map (fn [child] (qb child model uri)) children)]
+
+      (cond (or (= type :relator) (= type :projector))
+          (let [statement (get-bound binding model)
+                binder (.getURI (.getPredicate statement))
+                predicate (.asResource (.getObject statement))
+                reverse (= binder (db :binds))]
+            [{:pred (.getURI predicate) :rev reverse} subs])
+          (= type :container)
+          subs
+          )))
+
+
+
+
+
+(defn qbuild [view-data uri]
+  (let [inf (. ModelFactory createRDFSModel view-data)
+            root (.asResource (.getObject (.getProperty inf
+                                                        (res (:root db))
+                                                        (prop (:haschild db)))))
+        init (qb root inf nil)
+
+        numbered (loop [loc (zip/vector-zip (flatten-seq init))
+                        uid 0]
+                   (println init)
+      (cond (z/end? loc)
+            (z/root loc)
+
+            (map? (z/node loc))
+            (recur (-> loc (z/replace (assoc (z/node loc) :id uid)) z/next)
+                   (+ uid 1))
+            :else
+            (recur (z/next loc) uid)))]
+    numbered
+
+
+    ))
+(defn render-query [[node & children] opt]
+  (apply str (map (fn [child]
+                    (str
+                     (if (:rev (first child))
+                       (str (if opt "OPTIONAL {?a" "?a")
+                            (:id (first child)) " "
+                            "<"(:pred (first child)) "> ?a"
+                            (:id node) " .\n" )
+                       (str (if opt "OPTIONAL {?a" "?a")
+                            (:id node) " "
+                            "<"(:pred (first child)) "> ?a"
+                            (:id (first child)) " .\n" ))
+                     (render-query child true) (if opt " }\n" "\n")))
+                  children)))
+(defn render-graph [[node & children]]
+  (apply str (map (fn [child]
+                    (str
+                     (if (:rev (first child))
+                       (str "?a"
+                            (:id (first child)) " "
+                            "<"(:pred (first child)) "> ?a"
+                            (:id node) " .\n" )
+                       (str "?a"
+                            (:id node) " "
+                            "<"(:pred (first child)) "> ?a"
+                            (:id (first child)) " .\n" ))
+                     (render-graph child) "\n"))
+                  children)))
+
+
+(defn build-query [inf uri]
+  (let [query  [{:id "root"} (qbuild inf uri)]]
+    (.execConstruct
+     (. QueryExecutionFactory sparqlService
+        "http://localhost:8000/sparql/"
+        (str "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX ont: <http://logangilmour.com/example-ontology#>
+
+CONSTRUCT {"
+             (render-graph query)
+             "} WHERE {"
+             (render-query query false)
+             "}"
+             )))))
 
 (defn query-builder [command reversed]
   (cond (= (:type command) "update")
         (if reversed
-          (simple-update "
-INSERT DATA {?s ?p ?o }
-
+          [(simple-update "
 DELETE { ?old ?p ?o }
-INSERT { ?s ?p ?o }
 WHERE { ?old ?p ?o }"
+                           (plit (:value command))
+                           (prop (:predicate command))
+                           (res (:uri command)))
+           (simple-update "
+INSERT DATA {?s ?p ?o }"
                          (plit (:value command))
                          (prop (:predicate command))
-                         (res (:uri command)))
-          (simple-update "
-INSERT DATA {?s ?p ?o }
-
+                         (res (:uri command)))]
+          [(simple-update "
 DELETE { ?s ?p ?old }
-INSERT { ?s ?p ?o }
 WHERE { ?s ?p ?old }"
-                         (res (:uri command))
-                         (prop (:predicate command))
-                         (plit (:value command))))
+                           (res (:uri command))
+                           (prop (:predicate command))
+                           (plit (:value command)))
+           (simple-update "
+INSERT DATA {?s ?p ?o }"
+                           (res (:uri command))
+                           (prop (:predicate command))
+                           (plit (:value command)))])
         (= (:type command) "create")
         (if reversed
-          (simple-update "INSERT DATA { ?s ?p ?o }"
-                         (res (:value command))
-                         (prop (:predicate command))
-                         (res (:uri command)))
-          (simple-update "INSERT DATA { ?s ?p ?o }"
-                         (res (:uri command))
-                         (prop (:predicate command))
-                         (res (:value command))))
+          [(simple-update "INSERT DATA { ?s ?p ?o }"
+                           (res (:value command))
+                           (prop (:predicate command))
+                           (res (:uri command)))]
+          [(simple-update "INSERT DATA { ?s ?p ?o }"
+                           (res (:uri command))
+                           (prop (:predicate command))
+                           (res (:value command)))])
 
         (= (:type command) "delete")
         (if reversed
-          (simple-update "DELETE DATA { ?s ?p ?o }"
-                         (res (:value command))
-                         (prop (:predicate command))
-                         (res (:uri command)))
-          (simple-update "DELETE DATA { ?s ?p ?o }"
-                         (res (:uri command))
-                         (prop (:predicate command))
-                         (res (:value command))))
+          [(simple-update "DELETE DATA { ?s ?p ?o }"
+                           (res (:value command))
+                           (prop (:predicate command))
+                           (res (:uri command)))]
+          [(simple-update "DELETE DATA { ?s ?p ?o }"
+                           (res (:uri command))
+                           (prop (:predicate command))
+                           (res (:value command)))])
 
        ))
 
@@ -366,7 +527,7 @@ WHERE { ?s ?p ?old }"
         )))
 
 (defn editor [inf]
-  (fn [model uri binding data]
+  (fn [uri binding data]
     (let [statement (get-bound binding inf)
           func (:update (bound-func binding inf))
           binder (.getURI (.getPredicate statement))
@@ -377,15 +538,19 @@ WHERE { ?s ?p ?old }"
           pred (.getURI predicate)
           resource (res uri) ;;TODO HERE make a serializer for each binding, then use them to populate action with html if this is an htmlable type thing. Consider moving to a pure update based strategy, as then we don't need javascript that's so complicated on the client side. We just regenerate any part of the view that's changed at any time. However, this means things like chat-rooms are not really viable.
           reverse (= binder (db :binds))
-          graph-store (. GraphStoreFactory create model)
+          ;;graph-store (. GraphStoreFactory create model)
           command (func uri pred data)
           update (query-builder command reverse)
-
           ]
 
 
       (println "!!!!!! " update " !!!!!!!!")
-      (. UpdateAction execute update graph-store)
+      (doall (map (fn [up]
+               (client/post "http://localhost:8000/update/" {:form-params {:update up}})) update))
+      (comment (let [exec (. UpdateExecutionFactory createRemoteForm update "http://localhost:8000/update/")]
+          (println "\n\n\n\n" (.getContext exec) "\n\n\n\n")
+          (.execute exec)))
+
 
       (map (fn [binder]
              (let [binding (.getSubject binder)
@@ -397,7 +562,7 @@ WHERE { ?s ?p ?old }"
                 (assoc command
                   :value
                   ((serializer inf binding)
-                   model
+                   (build-query (to-model example-view) nil)
                    (if (= (:type command) "update")
                      (plit (:value command))
                      (res (:value command)))
@@ -426,14 +591,41 @@ WHERE { ?s ?p ?old }"
 @prefix ont: <http://logangilmour.com/example-ontology#> .
 @prefix dc: <http://purl.org/dc/elements/1.1/> .
 
-data:root data:haschild ex:person-list .
+data:root data:haschild ex:person-manager .
 
-ex:person-list rdf:type data:list ;
-               data:binds rdf:type ;
-               dc:title \"List of People\" ;
-               dc:description \"A list of people contained within the application\" .
+ex:person-manager
+  rdf:type data:row ;
+  dc:title \"The Application\" ;
+  dc:description \"Here we are\" .
 
-ex:person-list data:haschild ex:person-name-container , ex:person-age , ex:pets-list ,  ex:person-deleter .
+ex:person-manager data:haschild ex:person-list-container, ex:person-container .
+
+ex:person-list-container
+  data:haschild ex:person-list ;
+  rdf:type data:column4 .
+
+ex:person-list
+  rdf:type data:list ;
+  data:binds rdf:type ;
+  dc:title \"List of People\" ;
+  dc:description \"A list of people contained within the application\" ;
+  data:haschild ex:person-projector ;
+  data:rank 1 .
+
+ex:person-projector
+  rdf:type data:projector ;
+  data:bindo ont:name ;
+  dc:title \"select\" ;
+  dc:description \"choose a person\" ;
+  data:projects ex:person-container ;
+  data:rank 2 .
+
+ex:person-container
+  rdf:type data:column8 ;
+  dc:title \"Person\" ;
+  dc:description \"A person\" .
+
+ex:person-container data:haschild ex:person-name-container , ex:person-age , ex:pets-list ,  ex:person-deleter .
 
 ex:person-deleter rdf:type data:deleter ;
                   data:bindo rdf:type ;
@@ -546,9 +738,13 @@ test:dave ont:haspet \"Monster\" ;
   (hic/html
    [:html
     [:head
+     [:meta {:name "viewport" :content "width=device-width, initial-scale=1.0"}]
+
+     [:link {:href "css/bootstrap.min.css" :rel "stylesheet" :media "screen"}]
      [:title "FIXME"]]
     [:body body
      [:script {:type "text/javascript" :src "/js/jquery.min.js"}]
+     [:script {:type "text/javascript" :src "/js/bootstrap.min.js"}]
      [:script {:type "text/javascript" :src "/js/underscore-min.js"}]
      [:script {:type "text/javascript" :src "/js/update.js"}]]
 
@@ -567,7 +763,7 @@ test:dave ont:haspet \"Monster\" ;
 (def edit (editor (to-model example-view)))
 
 (defn store [message]
-  (edit data-model (:uri message) (res (:binding message)) (:data message)))
+  (edit (:uri message) (res (:binding message)) (:data message)))
 
 (defn chat-handler [ch handshake]
   (receive ch
@@ -581,7 +777,7 @@ test:dave ont:haspet \"Monster\" ;
 (defroutes main-routes
   (GET "/async/" [] (wrap-aleph-handler chat-handler))
   (GET "/" []
-       (page ((serializer (to-model example-view)) data-model (res "http://logangilmour.com/example-ontology#person"))))
+       (page ((serializer (to-model example-view)) (build-query (to-model example-view) nil) (res "http://logangilmour.com/example-ontology#person"))))
   (route/resources "/")
   (route/not-found "Page not found"))
 
