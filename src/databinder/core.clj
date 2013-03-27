@@ -49,13 +49,17 @@
 
 (defn uuid [] (str "urn:uuid:" (java.util.UUID/randomUUID)))
 
-(def db (uris "http://logangilmour.com/data-binder#" :rank :root :binds :bindo  :haschild :projects))
+(def db (uris "http://logangilmour.com/data-binder#" :rank :root :binds :bindo  :haschild :contains :projects :path))
 
 (def funcs
   {:projector
-   {:resource (fn [uri binding meta vals]
-                (hic/html [:a {:href uri} vals]))
-    :value identity
+   {:resource (fn [uri binding active url meta vals]
+                (let [s (apply str vals)]
+                  (hic/html [:a {:href url :class (if active "active projector-binding" "projector-binding")
+                                 :data-binding binding
+                                 :data-uri uri} (if (re-matches #"^\s*$" s) "untitled" s)])))
+    :value (fn [parent uri binding meta val]
+             uri)
     :update nil
     :type :projector}
    :column8
@@ -247,20 +251,29 @@
   (iterator-seq (.listResourcesWithProperty model predicate resource)))
 
 
-(defn s-rec [binding model]
+(defn s-rec [binding model url-parts]
 
   (let [children (sort-by (fn [resource]
                             (let [p (.getProperty model resource (prop (:rank db)))]
                               (if p
                                 (.getString (.asLiteral (.getObject p)))
                                 "")))
-                          (relate-right model (prop (:haschild db)) binding))
+                          (concat
+                           (relate-right model (prop (:contains db)) binding)
+                           (relate-right model (prop (:haschild db)) binding)))
+
+        projector (first (relate-left model (prop (:projects db)) binding)) ;;TODO only works for container pointed at by projector for now.
+        path (and projector (first (relate-right model (prop (:path db)) projector)))
 
         bindable (bound-func binding model)
 
         type (:type bindable)
 
-        sub-calls (map (fn [child] (s-rec child model)) children) ;; make the next part of the tree
+        new-url-parts (if path
+                  (conj url-parts (.getString (.asLiteral path)))
+                  url-parts)
+
+        sub-calls (map (fn [child] (s-rec child model url-parts)) children) ;; make the next part of the tree
         meta-data (get-meta-data binding model)]
 
     (cond (= type :relator)
@@ -268,7 +281,7 @@
                 relation-getter (fn [data resource] (relator statement data resource))
                 child-func (:value bindable)
                 parent-func (:resource bindable)] ;; extraneous function getting]
-            (fn [data child resource]
+            (fn [data child resource url built-url]
 
               (let [related (if child   ;; get sub-resources (a single one if partial rendering)
                               (seq [child])
@@ -282,42 +295,53 @@
                              (parent-func
                               uri bind meta
                               (map (fn [val] (child-func
-                                             uri (:uri val) bind meta (:html val))) vals))))]
-                (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
-                      (.getURI binding)
-                      meta-data
-                      (map (fn [val] {:uri (first val) :html (second val)})
+                                             uri (:uri val) bind meta (:html val))) vals))))
+                    vals (map (fn [val] {:uri (first val) :html (second val)})
                            (map vector
                                 (map #(.toString %) related) ;; TODO this is a little sketchy
                                 (if (empty? sub-calls)
                                   (map literalize related)
                                   (map seq (apply map vector (map (fn [sub-call]
                                                                     (map
-                                                                     (partial sub-call data nil)
+                                                                     (fn [val]
+                                                                       (sub-call data nil val url built-url))
                                                                      related))
-                                                                  sub-calls))))))))))
+                                                                  sub-calls))))))]
+
+                (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
+                      (.getURI binding)
+                      meta-data
+                      vals))))
           (= type :projector)
+
           (let [statement (get-bound binding model) ;; fuckery for binding
                 relation-getter (fn [data resource] (relator statement data resource))
                 child-func (:value bindable)
-                parent-func (:resource bindable)] ;; extraneous function getting]
-            (fn [data child resource]
+                parent-func (:resource bindable)
+                mypath (.getString (.asLiteral (first (relate-right model (prop (:path db)) binding))))
+                ]
+            (fn [data child resource url built-url]
 
               (let [related (if child   ;; get sub-resources (a single one if partial rendering)
                               (seq [child])
                               (relation-getter data resource))
                     func (if child ;; get the bound function
-                           (fn [uri bind meta vals]
+                           (fn [uri bind active url meta vals]
                              (let [val (first vals)]
                                (child-func
                                 uri (:uri val) bind meta (:html val))))
-                           (fn [uri bind meta vals]
+                           (fn [uri bind active url meta vals]
                              (parent-func
-                              uri bind meta
+                              uri bind active url meta
                               (map (fn [val] (child-func
-                                             uri (:uri val) bind meta (:html val))) vals))))]
+                                             uri (:uri val) bind meta (:html val))) vals))))
+                    current (get (parse-uri url) mypath)
+                    active (= current (.getURI resource))
+                    myurl (str built-url mypath "/" (.getURI resource) "/")]
                 (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
                       (.getURI binding)
+                      active
+                      myurl
                       meta-data
                       (map (fn [val] {:uri (first val) :html (second val)})
                            (map vector
@@ -326,15 +350,29 @@
                                   (map literalize related)
                                   (map seq (apply map vector (map (fn [sub-call]
                                                                     (map
-                                                                     (partial sub-call data nil)
+                                                                     (fn [val] (sub-call data nil val url built-url))
                                                                      related))
                                                                   sub-calls))))))))))
           (= type :container)
-          (fn [data child resource]
-            (let [func (:display bindable)]
-              (func
-                  meta-data
-                  (map (fn [sub-call] (sub-call data nil resource)) sub-calls)))))))
+          (fn [data child resource url built-url]
+            (let [func (:display bindable)
+                  ppath (and path (.getString (.asLiteral path)))
+                  p (get (parse-uri url) ppath)
+                  projected (if (and p (res p))
+                              (if (.containsResource data (res p))
+                                (res p)))
+                  ]
+
+              (if ppath
+                (if projected
+                  (func
+                   meta-data
+                   (map (fn [sub-call] (sub-call data nil projected url (str built-url ppath "/" (.getURI resource) "/"))) sub-calls))
+                  "")
+                (func
+                   meta-data
+                   (map (fn [sub-call] (sub-call data nil resource url built-url)) sub-calls))
+                ))))))
 
 (defn select [model subject predicate object]
   (iterator-seq (.listStatements (new SimpleSelector subject predicate object))))
@@ -359,22 +397,42 @@
                   :default
                   (conj accum val))) [] coll))
 
-(defn qb [binding model uri]
+(defn qb [binding model uri] ;; TODO come up with a nice URI aliasing thing
+  (let [children (concat
+                  (relate-right model (prop (:haschild db)) binding)
+                  (relate-right model (prop (:projects db)) binding))
 
-    (let [children (relate-right model (prop (:haschild db)) binding)
+        projector (first (relate-left model (prop (:projects db)) binding))
+        ppath (and projector (first (relate-left model (prop (:path db)) projector)))
 
-          bindable (bound-func binding model)
+        bindable (bound-func binding model)
 
-          type (:type bindable)
+        type (:type bindable)
+        path (first (relate-right model (prop (:path db)) binding))
+        onpath (and path (get uri (.getString (.asLiteral path))))
 
-          subs (map (fn [child] (qb child model uri)) children)]
+        subs
+        (if (= type :projector)
+          (if onpath
+            (map (fn [child] (qb child model uri)) children)
+            '())
+          (map (fn [child] (qb child model uri)) children))]
 
-      (cond (or (= type :relator) (= type :projector))
+    (cond (= type :relator)
+          (let [statement (get-bound binding model)
+
+                binder (.getURI (.getPredicate statement))
+                predicate (.asResource (.getObject statement))
+                reverse (= binder (db :binds))]
+            [{:pred (.getURI predicate) :rev reverse :type :relator} subs])
+
+          (= type :projector)
           (let [statement (get-bound binding model)
                 binder (.getURI (.getPredicate statement))
                 predicate (.asResource (.getObject statement))
                 reverse (= binder (db :binds))]
-            [{:pred (.getURI predicate) :rev reverse} subs])
+            [{:pred (.getURI predicate) :rev reverse :path onpath :type :projector} subs])
+
           (= type :container)
           subs
           )))
@@ -388,34 +446,45 @@
             root (.asResource (.getObject (.getProperty inf
                                                         (res (:root db))
                                                         (prop (:haschild db)))))
-        init (qb root inf nil)
+        init (qb root inf uri)
 
-        numbered (loop [loc (zip/vector-zip (flatten-seq init))
+        numbered (loop [loc (z/vector-zip (flatten-seq init))
                         uid 0]
-                   (println init)
+
       (cond (z/end? loc)
             (z/root loc)
 
             (map? (z/node loc))
-            (recur (-> loc (z/replace (assoc (z/node loc) :id uid)) z/next)
+            (recur (-> loc (z/replace (assoc (z/node loc) :id (str uid))) z/next)
                    (+ uid 1))
             :else
             (recur (z/next loc) uid)))]
-    numbered
+    (vec (concat [{:id "root"}] numbered))
 
 
     ))
+
+(defn parse-uri [uri]
+  (apply assoc {} (clojure.string/split uri #"/")))
+(defn q-map [[node & children]]
+  (let [results (apply merge {} (map q-map children))]
+    (if (:path node)
+      (assoc
+          results
+        (str "p" (:id node)) (:path node))
+      results)))
+
 (defn render-query [[node & children] opt]
   (apply str (map (fn [child]
                     (str
                      (if (:rev (first child))
-                       (str (if opt "OPTIONAL {?a" "?a")
+                       (str (if opt "OPTIONAL {?" "?")
                             (:id (first child)) " "
-                            "<"(:pred (first child)) "> ?a"
-                            (:id node) " .\n" )
-                       (str (if opt "OPTIONAL {?a" "?a")
-                            (:id node) " "
-                            "<"(:pred (first child)) "> ?a"
+                            "<"(:pred (first child)) "> ?"
+                            (if (:path node) "p" "") (:id node) " .\n" )
+                       (str (if opt "OPTIONAL {?" "?")
+                            (if (:path node) "p" "") (:id node) " "
+                            "<"(:pred (first child)) "> ?"
                             (:id (first child)) " .\n" ))
                      (render-query child true) (if opt " }\n" "\n")))
                   children)))
@@ -423,24 +492,26 @@
   (apply str (map (fn [child]
                     (str
                      (if (:rev (first child))
-                       (str "?a"
+                       (str "?"
                             (:id (first child)) " "
-                            "<"(:pred (first child)) "> ?a"
-                            (:id node) " .\n" )
-                       (str "?a"
-                            (:id node) " "
-                            "<"(:pred (first child)) "> ?a"
+                            "<"(:pred (first child)) "> ?"
+                            (if (:path node) "p" "") (:id node) " .\n" )
+                       (str "?"
+                            (if (:path node) "p" "") (:id node) " "
+                            "<"(:pred (first child)) "> ?"
                             (:id (first child)) " .\n" ))
                      (render-graph child) "\n"))
                   children)))
 
-
+(defn query-map [query]
+  (let [vals (q-map query)
+        qm (new QuerySolutionMap)]
+    (doall (map (fn [key] (.add qm (str key) (res (get vals key)))) (keys vals)))
+    qm))
 (defn build-query [inf uri]
-  (let [query  [{:id "root"} (qbuild inf uri)]]
-    (.execConstruct
-     (. QueryExecutionFactory sparqlService
-        "http://localhost:8000/sparql/"
-        (str "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+  (let [query  (qbuild inf (parse-uri uri))
+        qm (query-map query)
+        s (str "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX ont: <http://logangilmour.com/example-ontology#>
 
@@ -449,7 +520,16 @@ CONSTRUCT {"
              "} WHERE {"
              (render-query query false)
              "}"
-             )))))
+             )]
+    (.add qm "root" (res "http://logangilmour.com/example-ontology#person"))  ;; TODO DIRTY DIRTY HACKS
+
+    (let [done (.toString (new ParameterizedSparqlString s qm))]
+      ;;(println (render-query query false) "\n\n\n" (render-graph query) "\n\n\n" done)
+      (.execConstruct
+       (. QueryExecutionFactory sparqlService
+          "http://localhost:8000/sparql/"
+          done
+          )))))
 
 (defn query-builder [command reversed]
   (cond (= (:type command) "update")
@@ -517,42 +597,26 @@ INSERT DATA {?s ?p ?o }"
                                                         (res (:root db))
                                                         (prop (:haschild db)))))]
 
-        (fn [data resource] ((s-rec root inf) data nil resource))
+        (fn [data resource uri]
+          ((s-rec root inf []) data nil resource uri "/view/"))
         ))
   ([view-data binding]
 
       (let [inf (. ModelFactory createRDFSModel view-data)]
 
-        (s-rec binding inf)
+        (fn [data child resource uri] ((s-rec binding inf []) data child resource uri "/view/"))
         )))
 
-(defn editor [inf]
-  (fn [uri binding data]
-    (let [statement (get-bound binding inf)
-          func (:update (bound-func binding inf))
-          binder (.getURI (.getPredicate statement))
-          predicate (.asResource (.getObject statement))
+(defn syncer [inf]
+  (fn [command url]
+
+    (let [predicate (res (:predicate command))
           binders (get-all-bindings inf predicate)
           bindings (map #(.getSubject %) binders)
-          views (map (partial serializer inf) bindings)
-          pred (.getURI predicate)
-          resource (res uri) ;;TODO HERE make a serializer for each binding, then use them to populate action with html if this is an htmlable type thing. Consider moving to a pure update based strategy, as then we don't need javascript that's so complicated on the client side. We just regenerate any part of the view that's changed at any time. However, this means things like chat-rooms are not really viable.
-          reverse (= binder (db :binds))
-          ;;graph-store (. GraphStoreFactory create model)
-          command (func uri pred data)
-          update (query-builder command reverse)
-          ]
-
-
-      (println "!!!!!! " update " !!!!!!!!")
-      (doall (map (fn [up]
-               (client/post "http://localhost:8000/update/" {:form-params {:update up}})) update))
-      (comment (let [exec (. UpdateExecutionFactory createRemoteForm update "http://localhost:8000/update/")]
-          (println "\n\n\n\n" (.getContext exec) "\n\n\n\n")
-          (.execute exec)))
-
+          views (map (partial serializer inf) bindings)]
 
       (map (fn [binder]
+
              (let [binding (.getSubject binder)
                    reverse (= (.getURI (.getPredicate binder)) (db :binds))]
 
@@ -562,11 +626,12 @@ INSERT DATA {?s ?p ?o }"
                 (assoc command
                   :value
                   ((serializer inf binding)
-                   (build-query (to-model example-view) nil)
+                   (build-query inf url)
                    (if (= (:type command) "update")
                      (plit (:value command))
                      (res (:value command)))
-                   (res (:uri command)))
+                   (res (:uri command))
+                   url)
                   :binding
                   (.toString binding))
 
@@ -580,6 +645,24 @@ INSERT DATA {?s ?p ?o }"
 
 
       )))
+(defn editor [inf]
+  (fn [message]
+    (let [uri (:uri message)
+          binding (res (:binding message))
+          data (:data message)
+          statement (get-bound binding inf)
+          func (:update (bound-func binding inf))
+          binder (.getURI (.getPredicate statement))
+          predicate (.asResource (.getObject statement))
+          pred (.getURI predicate)
+          resource (res uri) ;;TODO HERE make a serializer for each binding, then use them to populate action with html if this is an htmlable type thing. Consider moving to a pure update based strategy, as then we don't need javascript that's so complicated on the client side. We just regenerate any part of the view that's changed at any time. However, this means things like chat-rooms are not really viable.
+          reverse (= binder (db :binds))
+          ;;graph-store (. GraphStoreFactory create model)
+          command (func uri pred data)
+          update (query-builder command reverse)]
+      (doall (map (fn [up]
+                    (client/post "http://localhost:8000/update/" {:form-params {:update up}})) update))
+      command)))
 
 
 
@@ -596,34 +679,35 @@ data:root data:haschild ex:person-manager .
 ex:person-manager
   rdf:type data:row ;
   dc:title \"The Application\" ;
-  dc:description \"Here we are\" .
-
-ex:person-manager data:haschild ex:person-list-container, ex:person-container .
+  dc:description \"Here we are\" ;
+  data:haschild ex:person-list-container ;
+  data:contains ex:person-container .
 
 ex:person-list-container
   data:haschild ex:person-list ;
-  rdf:type data:column4 .
+  rdf:type data:column4 ;
+  data:rank 1 .
 
 ex:person-list
   rdf:type data:list ;
   data:binds rdf:type ;
   dc:title \"List of People\" ;
   dc:description \"A list of people contained within the application\" ;
-  data:haschild ex:person-projector ;
-  data:rank 1 .
+  data:haschild ex:person-projector .
 
 ex:person-projector
   rdf:type data:projector ;
+  data:path \"test\" ;
   data:bindo ont:name ;
   dc:title \"select\" ;
   dc:description \"choose a person\" ;
-  data:projects ex:person-container ;
-  data:rank 2 .
+  data:projects ex:person-container .
 
 ex:person-container
   rdf:type data:column8 ;
   dc:title \"Person\" ;
-  dc:description \"A person\" .
+  dc:description \"A person\" ;
+  data:rank 2 .
 
 ex:person-container data:haschild ex:person-name-container , ex:person-age , ex:pets-list ,  ex:person-deleter .
 
@@ -740,7 +824,7 @@ test:dave ont:haspet \"Monster\" ;
     [:head
      [:meta {:name "viewport" :content "width=device-width, initial-scale=1.0"}]
 
-     [:link {:href "css/bootstrap.min.css" :rel "stylesheet" :media "screen"}]
+     [:link {:href "/css/bootstrap.min.css" :rel "stylesheet" :media "screen"}]
      [:title "FIXME"]]
     [:body body
      [:script {:type "text/javascript" :src "/js/jquery.min.js"}]
@@ -761,23 +845,45 @@ test:dave ont:haspet \"Monster\" ;
 
 (def broadcast-channel (permanent-channel))
 (def edit (editor (to-model example-view)))
+(def syn (syncer (to-model example-view)))
 
-(defn store [message]
-  (edit (:uri message) (res (:binding message)) (:data message)))
+
+(def channels (atom {}))
+
+(defn register [ch url]
+  (siphon (map* edit (map* decode-json ch)) broadcast-channel)
+  (swap! channels (fn [old]
+
+                    (let [all (reduce (fn [accum key]
+                                        (if (closed? (get old key))
+                                          (do
+                                            (println "Getting rid of old connection for " key)
+                                           (dissoc old key))
+                                          old)) old (keys old))
+                          url-ch (or (get all url)
+                                     (let [new-ch (channel)]
+                                       (println "creating a channel for url " url)
+                                       (siphon (map* encode-json->string (map* (fn [message] (syn message url)) broadcast-channel)) new-ch)
+                                       new-ch))]
+                      (siphon url-ch ch) ;; listen on your url channel
+                      (doall (map (partial println "\nConnection: ") (keys all)))
+                      (assoc all url url-ch)
+                      ))))
 
 (defn chat-handler [ch handshake]
   (receive ch
            (fn [input]
-             ;;(let jc [(map* decode-json ch)])
-             (siphon (map* encode-json->string (map* store (map* decode-json ch))) broadcast-channel)
-             (siphon broadcast-channel ch)
+             (let [url (:* (:params handshake))]
+               (println "registering a connection to url " url)
+               ;;(let jc [(map* decode-json ch)])
+               (register ch url))
              )))
 
 
 (defroutes main-routes
-  (GET "/async/" [] (wrap-aleph-handler chat-handler))
-  (GET "/" []
-       (page ((serializer (to-model example-view)) (build-query (to-model example-view) nil) (res "http://logangilmour.com/example-ontology#person"))))
+  (GET "/async/*" [] (wrap-aleph-handler chat-handler))
+  (GET "/view/*" [*]
+       (page ((serializer (to-model example-view)) (build-query (to-model example-view) *) (res "http://logangilmour.com/example-ontology#person") *)))
   (route/resources "/")
   (route/not-found "Page not found"))
 
