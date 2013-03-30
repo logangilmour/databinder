@@ -66,7 +66,7 @@
     :value (fn [parent uri binding meta val]
              uri)
     :update nil
-    :type :projector}
+    :type :relator}
    :column8
    {:display (fn [meta vals]
                (hic/html [:div.span8 vals]))
@@ -81,7 +81,7 @@
     :type :container}
 
    :list
-   {:resource (fn [uri binding meta vals]
+   {:resource (fn [uri binding active url meta vals]
                 (hic/html
                           [:ul {:class "list-binding nav nav-list"
                                              :data-uri uri
@@ -102,7 +102,7 @@
     :type :relator}
 
    :deleter
-   {:resource (fn [uri binding meta vals]
+   {:resource (fn [uri binding active url meta vals]
                 (hic/html [:a.remove-binding
                                  {:href "#"
                                   :data-uri uri
@@ -116,7 +116,7 @@
     :type :relator}
 
    :paragraph
-   {:resource (fn [uri binding meta vals]
+   {:resource (fn [uri binding active url meta vals]
                 (hic/html [:p {:data-uri uri
                        :data-binding binding
                        :data-description (:description meta)}
@@ -127,7 +127,7 @@
     :type :relator}
 
    :text-field
-   {:resource (fn [uri binding meta vals]
+   {:resource (fn [uri binding active url meta vals]
                 (hic/html [:label (str (:title meta) " ")
                    [:input {:type "text"
                             :class "text-field-binding"
@@ -291,49 +291,15 @@
         sub-calls (map (fn [child] (s-rec child model url-parts)) children) ;; make the next part of the tree
         meta-data (get-meta-data binding model)]
 
-    (cond (= type :relator)
-          (let [statement (get-bound binding model) ;; fuckery for binding
-                relation-getter (fn [data resource] (relator statement data resource))
-                child-func (:value bindable)
-                parent-func (:resource bindable)] ;; extraneous function getting]
-            (fn [data child resource url built-url]
-
-              (let [related (if child   ;; get sub-resources (a single one if partial rendering)
-                              (seq [child])
-                              (relation-getter data resource))
-                    func (if child ;; get the bound function
-                           (fn [uri bind meta vals]
-                             (let [val (first vals)]
-                               (child-func
-                                uri (:uri val) bind meta (:html val))))
-                           (fn [uri bind meta vals]
-                             (parent-func
-                              uri bind meta
-                              (map (fn [val] (child-func
-                                             uri (:uri val) bind meta (:html val))) vals))))
-                    vals (map (fn [val] {:uri (first val) :html (second val)})
-                           (map vector
-                                (map #(.toString %) related) ;; TODO this is a little sketchy
-                                (if (empty? sub-calls)
-                                  (map literalize related)
-                                  (map seq (apply map vector (map (fn [sub-call]
-                                                                    (map
-                                                                     (fn [val]
-                                                                       (sub-call data nil val url built-url))
-                                                                     related))
-                                                                  sub-calls))))))]
-
-                (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
-                      (.getURI binding)
-                      meta-data
-                      vals))))
-          (= type :projector)
+    (cond
+          (= type :relator)
 
           (let [statement (get-bound binding model) ;; fuckery for binding
                 relation-getter (fn [data resource] (relator statement data resource))
                 child-func (:value bindable)
                 parent-func (:resource bindable)
-                mypath (.getString (.asLiteral (first (relate-right model (prop (:path db)) binding))))
+                myp (first (relate-right model (prop (:path db)) binding))
+                mypath (and myp (.getString (.asLiteral myp)))
                 ]
             (fn [data child resource url built-url]
 
@@ -350,13 +316,13 @@
                               uri bind active url meta
                               (map (fn [val] (child-func
                                              uri (:uri val) bind meta (:html val))) vals))))
-                    current (get (parse-uri url) mypath)
-                    active (= current (.getURI resource))
-                    myurl (str built-url mypath "/" (.getURI resource) "/")]
+                    current (and mypath (get (parse-uri url) mypath))
+                    active (and mypath (= current (.getURI resource)))
+                    myurl (and mypath (str built-url mypath "/" (.getURI resource) "/")) ]
                 (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
                       (.getURI binding)
                       active
-                      myurl
+                      (or myurl built-url)
                       meta-data
                       (map (fn [val] {:uri (first val) :html (second val)})
                            (map vector
