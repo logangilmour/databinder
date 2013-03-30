@@ -55,9 +55,14 @@
   {:projector
    {:resource (fn [uri binding active url meta vals]
                 (let [s (apply str vals)]
-                  (hic/html [:a {:href url :class (if active "active projector-binding" "projector-binding")
-                                 :data-binding binding
-                                 :data-uri uri} (if (re-matches #"^\s*$" s) "untitled" s)])))
+                  (hic/html [:li  {:class (if active "active" "")
+
+                                   :data-uri uri}
+                             [:a.projector-binding {
+                                                    :href url
+                                                    :data-uri uri
+                                      :data-binding binding
+                                      } (if (re-matches #"^\s*$" s) "untitled" s)]])))
     :value (fn [parent uri binding meta val]
              uri)
     :update nil
@@ -77,17 +82,20 @@
 
    :list
    {:resource (fn [uri binding meta vals]
-                (hic/html [:p (:title meta)]
-                          [:ol.list-binding {:data-uri uri
+                (hic/html
+                          [:ul {:class "list-binding nav nav-list"
+                                             :data-uri uri
                                 :data-binding binding
                                 :data-description (:description meta)}
+                           [:li.nav-header (:title meta)]
                            vals]
-                          [:a.list-add-binding
+                          [:a
                            {:href "#"
+                            :class "list-add-binding btn"
                             :data-uri uri
                             :data-binding binding} "Create"]))
     :value (fn [parent uri binding meta val]
-             (hic/html [:li {:data-uri uri} val]))
+             (hic/html val))
 
     :update (fn [uri pred data]
               {:type "create" :uri uri :predicate pred :value (uuid)})
@@ -250,6 +258,13 @@
 (defn relate-left [model predicate resource]
   (iterator-seq (.listResourcesWithProperty model predicate resource)))
 
+
+(defn parse-uri [uri]
+  (let [parts (filter (comp not (partial re-matches #"^\s*$")) (clojure.string/split uri #"/"))]
+    (println "'" uri"'\n\n\n!!!!!!!\n\n\n\n" parts)
+    (if (empty? parts)
+     {}
+     (apply assoc {} parts))))
 
 (defn s-rec [binding model url-parts]
 
@@ -464,8 +479,7 @@
 
     ))
 
-(defn parse-uri [uri]
-  (apply assoc {} (clojure.string/split uri #"/")))
+
 (defn q-map [[node & children]]
   (let [results (apply merge {} (map q-map children))]
     (if (:path node)
@@ -855,11 +869,11 @@ test:dave ont:haspet \"Monster\" ;
   (swap! channels (fn [old]
 
                     (let [all (reduce (fn [accum key]
-                                        (if (closed? (get old key))
+                                        (if (closed? (get accum key))
                                           (do
                                             (println "Getting rid of old connection for " key)
-                                           (dissoc old key))
-                                          old)) old (keys old))
+                                            (dissoc accum key))
+                                          accum)) old (keys old))
                           url-ch (or (get all url)
                                      (let [new-ch (channel)]
                                        (println "creating a channel for url " url)
