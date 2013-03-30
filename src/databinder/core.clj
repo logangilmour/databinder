@@ -49,105 +49,76 @@
 
 (defn uuid [] (str "urn:uuid:" (java.util.UUID/randomUUID)))
 
-(def db (uris "http://logangilmour.com/data-binder#" :rank :root :binds :bindo  :haschild :contains :projects :path))
+(def db (uris "http://logangilmour.com/data-binder#" :rank :root :binds :bindo  :haschild :container :relator :contains :projects :path))
 
 (def funcs
   {:projector
-   {:resource (fn [uri binding active url meta vals]
-                (let [s (apply str vals)]
-                  (hic/html [:li  {:class (if active "active" "")
+   (fn [uri binding active url meta vals]
+     (let [s (apply str vals)]
+       (hic/html [:li  {:class (if active "active" "")
 
-                                   :data-uri uri}
-                             [:a.projector-binding {
-                                                    :href url
-                                                    :data-uri uri
-                                      :data-binding binding
-                                      } (if (re-matches #"^\s*$" s) "untitled" s)]])))
-    :value (fn [parent uri binding meta val]
-             uri)
-    :update nil
-    :type :relator}
+                        :data-uri uri}
+                  [:a.projector-binding {
+                                         :href url
+                                         :data-uri uri
+                                         :data-binding binding
+                                         } (if (re-matches #"^\s*$" s) "untitled" s)]])))
    :column8
-   {:display (fn [meta vals]
-               (hic/html [:div.span8 vals]))
-    :type :container}
+   (fn [uri binding active url meta vals]
+     (hic/html [:div.span8 vals]))
+
    :column4
-   {:display (fn [meta vals]
-               (hic/html [:div.span4 vals]))
-    :type :container}
+   (fn [uri binding active url meta vals]
+     (hic/html [:div.span4 vals]))
    :row
-   {:display (fn [meta vals]
-               (hic/html [:div.row vals]))
-    :type :container}
+   (fn [uri binding active url meta vals]
+     (hic/html [:div.row vals]))
 
    :list
-   {:resource (fn [uri binding active url meta vals]
-                (hic/html
-                          [:ul {:class "list-binding nav nav-list"
-                                             :data-uri uri
-                                :data-binding binding
-                                :data-description (:description meta)}
-                           [:li.nav-header (:title meta)]
-                           vals]
-                          [:a
-                           {:href "#"
-                            :class "list-add-binding btn"
-                            :data-uri uri
-                            :data-binding binding} "Create"]))
-    :value (fn [parent uri binding meta val]
-             (hic/html val))
-
-    :update (fn [uri pred data]
-              {:type "create" :uri uri :predicate pred :value (uuid)})
-    :type :relator}
+   (fn [uri binding active url meta vals]
+     (hic/html
+      [:ul {:class "list-binding nav nav-list"
+            :data-uri uri
+            :data-binding binding
+            :data-description (:description meta)}
+       [:li.nav-header (:title meta)]
+       vals]
+      [:a
+       {:href "#"
+        :class "list-add-binding btn"
+        :data-uri uri
+        :data-binding binding} "Create"]))
 
    :deleter
-   {:resource (fn [uri binding active url meta vals]
-                (hic/html [:a.remove-binding
-                                 {:href "#"
-                                  :data-uri uri
-                                  :data-binding binding
-                                  :data-value (apply str vals)} (:title meta)]))
-    :value (fn [parent uri binding meta val]
-             val)
-
-    :update (fn [uri pred data]
-              {:type "delete" :uri uri :predicate pred :value data})
-    :type :relator}
+   (fn [uri binding active url meta vals]
+     (hic/html [:a.remove-binding
+                {:href "#"
+                 :data-uri uri
+                 :data-binding binding
+                 :data-value (apply str vals)} (:title meta)]))
 
    :paragraph
-   {:resource (fn [uri binding active url meta vals]
-                (hic/html [:p {:data-uri uri
-                       :data-binding binding
-                       :data-description (:description meta)}
-                   (:title meta) ": " vals]))
-    :value (fn [parent uri binding meta val]
-             (hic/html val))
-    :update nil
-    :type :relator}
+   (fn [uri binding active url meta vals]
+     (hic/html [:p {:data-uri uri
+                    :data-binding binding
+                    :data-description (:description meta)}
+                (:title meta) ": " vals]))
 
    :text-field
-   {:resource (fn [uri binding active url meta vals]
-                (hic/html [:label (str (:title meta) " ")
-                   [:input {:type "text"
-                            :class "text-field-binding"
-                            :data-uri uri
-                            :data-binding binding
-                            :data-description (:description meta)
-                            :value (apply str vals)}]]))
-    :value (fn [parent uri binding meta val]
-             (hic/html val))
-    :update (fn [uri pred data]
-              {:type "update" :uri uri :predicate pred :value data})
-    :type :relator}
+   (fn [uri binding active url meta vals]
+     (hic/html [:label (str (:title meta) " ")
+                [:input {:type "text"
+                         :class "text-field-binding"
+                         :data-uri uri
+                         :data-binding binding
+                         :data-description (:description meta)
+                         :value (apply str vals)}]]))
+
    :h1
-   {:display (fn [meta vals]
-               (hic/html [:h1 vals]))
-    :type :container}})
+   (fn [uri binding active url meta vals]
+     (hic/html [:h1 vals]))})
 
-(def functions (apply assoc {} (flatten (map (fn [key] [(str "http://logangilmour.com/data-binder#" (name key)) (get funcs key)]) (keys funcs)))))
-
-(merge db (apply uris "http://logangilmour.com/data-binder#" (keys funcs)))
+(def functions (apply assoc {} (flatten (map (fn [key] [(str "http://logangilmour.com/bootstrap-widgets#" (name key)) (get funcs key)]) (keys funcs)))))
 
 
 (defn relator [statement model resource]
@@ -164,12 +135,6 @@
     ))
 
 ;;TODO projectors url should bind itself some stuff so it knows its unique values and its name
-
-(defn bound-func [binding model]
-  (get functions
-       (.getURI
-        (.getObject
-         (.getProperty model binding (prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))))))
 
 (defn literalize [res]
   (if (.isLiteral res)
@@ -261,7 +226,7 @@
 
 (defn parse-uri [uri]
   (let [parts (filter (comp not (partial re-matches #"^\s*$")) (clojure.string/split uri #"/"))]
-    (println "'" uri"'\n\n\n!!!!!!!\n\n\n\n" parts)
+
     (if (empty? parts)
      {}
      (apply assoc {} parts))))
@@ -278,66 +243,54 @@
                            (relate-right model (prop (:haschild db)) binding)))
 
         projector (first (relate-left model (prop (:projects db)) binding)) ;;TODO only works for container pointed at by projector for now.
-        path (and projector (first (relate-right model (prop (:path db)) projector)))
+        path (if projector (first (relate-right model (prop (:path db)) projector)))
 
-        bindable (bound-func binding model)
+        bindable (first (relate-right model (prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type") binding))
 
-        type (:type bindable)
+        types (set (map #(.toString %) (relate-right model (prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type") binding)))
+
+        func (reduce (fn [accum val] (or accum (get functions val))) nil types)
 
         new-url-parts (if path
                   (conj url-parts (.getString (.asLiteral path)))
                   url-parts)
 
         sub-calls (map (fn [child] (s-rec child model url-parts)) children) ;; make the next part of the tree
-        meta-data (get-meta-data binding model)]
+        meta-data (get-meta-data binding model)
+        myp (first (relate-right model (prop (:path db)) binding))
+        mypath (if myp (.getString (.asLiteral myp)))]
 
     (cond
-          (= type :relator)
+     (contains? types (db :relator))
 
-          (let [statement (get-bound binding model) ;; fuckery for binding
-                relation-getter (fn [data resource] (relator statement data resource))
-                child-func (:value bindable)
-                parent-func (:resource bindable)
-                myp (first (relate-right model (prop (:path db)) binding))
-                mypath (and myp (.getString (.asLiteral myp)))
-                ]
-            (fn [data child resource url built-url]
+     (let [statement (get-bound binding model) ;; fuckery for binding
+           relation-getter (fn [data resource] (relator statement data resource))]
+       (fn [data child resource url built-url]
 
-              (let [related (if child   ;; get sub-resources (a single one if partial rendering)
-                              (seq [child])
-                              (relation-getter data resource))
-                    func (if child ;; get the bound function
-                           (fn [uri bind active url meta vals]
-                             (let [val (first vals)]
-                               (child-func
-                                uri (:uri val) bind meta (:html val))))
-                           (fn [uri bind active url meta vals]
-                             (parent-func
-                              uri bind active url meta
-                              (map (fn [val] (child-func
-                                             uri (:uri val) bind meta (:html val))) vals))))
-                    current (and mypath (get (parse-uri url) mypath))
-                    active (and mypath (= current (.getURI resource)))
-                    myurl (and mypath (str built-url mypath "/" (.getURI resource) "/")) ]
-                (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
-                      (.getURI binding)
-                      active
-                      (or myurl built-url)
-                      meta-data
-                      (map (fn [val] {:uri (first val) :html (second val)})
-                           (map vector
-                                (map #(.toString %) related) ;; TODO this is a little sketchy
-                                (if (empty? sub-calls)
-                                  (map literalize related)
-                                  (map seq (apply map vector (map (fn [sub-call]
-                                                                    (map
-                                                                     (fn [val] (sub-call data nil val url built-url))
-                                                                     related))
-                                                                  sub-calls))))))))))
-          (= type :container)
+         (let [related (if child   ;; get sub-resources (a single one if partial rendering)
+                         (seq [child])
+                         (relation-getter data resource))
+               current (if mypath (get (parse-uri url) mypath))
+               active (if mypath (= current (.getURI resource)))
+               myurl (if mypath (str built-url mypath "/" (.getURI resource) "/"))
+               vals (if (empty? sub-calls)
+                   (map literalize related)
+                   (map seq (apply map vector (map (fn [sub-call]
+                                                     (map
+                                                      (fn [val] (sub-call data nil val url built-url))
+                                                      related))
+                                                   sub-calls))))]
+           (if child
+             (hic/html vals) ;;TODO extract this business... maybe?
+             (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
+                   (.getURI binding)
+                   active
+                   (or myurl built-url)
+                   meta-data
+                   vals)))))
+     (contains? types (db :container)) ;;TODO make it so we can project from a container.
           (fn [data child resource url built-url]
-            (let [func (:display bindable)
-                  ppath (and path (.getString (.asLiteral path)))
+            (let [ppath (if path (.getString (.asLiteral path)))
                   p (get (parse-uri url) ppath)
                   projected (if (and p (res p))
                               (if (.containsResource data (res p))
@@ -347,12 +300,20 @@
               (if ppath
                 (if projected
                   (func
+                   (.getURI resource)
+                   (.getURI binding)
+                   nil
+                   built-url
                    meta-data
                    (map (fn [sub-call] (sub-call data nil projected url (str built-url ppath "/" (.getURI resource) "/"))) sub-calls))
                   "")
                 (func
-                   meta-data
-                   (map (fn [sub-call] (sub-call data nil resource url built-url)) sub-calls))
+                 (.getURI resource)
+                 (.getURI binding)
+                 nil
+                 built-url
+                 meta-data
+                 (map (fn [sub-call] (sub-call data nil resource url built-url)) sub-calls))
                 ))))))
 
 (defn select [model subject predicate object]
@@ -384,47 +345,39 @@
                   (relate-right model (prop (:projects db)) binding))
 
         projector (first (relate-left model (prop (:projects db)) binding))
-        ppath (and projector (first (relate-left model (prop (:path db)) projector)))
+        ppath (if projector (first (relate-left model (prop (:path db)) projector)))
 
-        bindable (bound-func binding model)
+        types (set (map #(.toString %) (relate-right model (prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type") binding)))
 
-        type (:type bindable)
         path (first (relate-right model (prop (:path db)) binding))
-        onpath (and path (get uri (.getString (.asLiteral path))))
+        onpath (if path (get uri (.getString (.asLiteral path))))
 
         subs
-        (if (= type :projector)
-          (if onpath
-            (map (fn [child] (qb child model uri)) children)
-            '())
-          (map (fn [child] (qb child model uri)) children))]
-
-    (cond (= type :relator)
-          (let [statement (get-bound binding model)
-
-                binder (.getURI (.getPredicate statement))
-                predicate (.asResource (.getObject statement))
-                reverse (= binder (db :binds))]
-            [{:pred (.getURI predicate) :rev reverse :type :relator} subs])
-
-          (= type :projector)
+        (if path
+         (if onpath
+           (map (fn [child] (qb child model uri)) children)
+           '())
+         (map (fn [child] (qb child model uri)) children))]
+    (println types "=" (db :container) " or " (db :relator))
+    (cond (contains? types (db :relator))
           (let [statement (get-bound binding model)
                 binder (.getURI (.getPredicate statement))
-                predicate (.asResource (.getObject statement))
+                predicate (.asResource (.getObject statement)) ;;TODO handle type thing with path thing
                 reverse (= binder (db :binds))]
-            [{:pred (.getURI predicate) :rev reverse :path onpath :type :projector} subs])
+            (println "got here 1")
+            [{:pred (.getURI predicate) :rev reverse :path onpath} subs])
 
-          (= type :container)
-          subs
+          (contains? types (db :container))
+          (do (println "got here 2")
+            subs)
           )))
 
 
 
 
 
-(defn qbuild [view-data uri]
-  (let [inf (. ModelFactory createRDFSModel view-data)
-            root (.asResource (.getObject (.getProperty inf
+(defn qbuild [inf uri]
+  (let [root (.asResource (.getObject (.getProperty inf
                                                         (res (:root db))
                                                         (prop (:haschild db)))))
         init (qb root inf uri)
@@ -488,8 +441,11 @@
         qm (new QuerySolutionMap)]
     (doall (map (fn [key] (.add qm (str key) (res (get vals key)))) (keys vals)))
     qm))
-(defn build-query [inf uri]
-  (let [query  (qbuild inf (parse-uri uri))
+
+(defn uni [] (. ModelFactory createRDFSModel (.union (to-model example-view) (to-model widgets))))
+(defn build-query [view-data widget-data uri]
+  (let [inf (. ModelFactory createRDFSModel (.union view-data widget-data))
+        query  (qbuild inf (parse-uri uri))
         qm (query-map query)
         s (str "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -504,7 +460,7 @@ CONSTRUCT {"
     (.add qm "root" (res "http://logangilmour.com/example-ontology#person"))  ;; TODO DIRTY DIRTY HACKS
 
     (let [done (.toString (new ParameterizedSparqlString s qm))]
-      ;;(println (render-query query false) "\n\n\n" (render-graph query) "\n\n\n" done)
+      (println (render-query query false) "\n\n\n" (render-graph query) "\n\n\n" done)
       (.execConstruct
        (. QueryExecutionFactory sparqlService
           "http://localhost:8000/sparql/"
@@ -569,10 +525,10 @@ INSERT DATA {?s ?p ?o }"
           (iterator-seq (.listStatements inf nil (prop (:bindo db)) predicate))))
 
 
-(defn serializer
-  ([view-data]
+(defn serializer ;;TODO make this build sub-serializers that work for sub-projections
+  ([view-data widget-data]
 
-      (let [inf (. ModelFactory createRDFSModel view-data)
+     (let [inf (. ModelFactory createRDFSModel (.union view-data widget-data))
             root (.asResource (.getObject (.getProperty inf
                                                         (res (:root db))
                                                         (prop (:haschild db)))))]
@@ -580,20 +536,19 @@ INSERT DATA {?s ?p ?o }"
         (fn [data resource uri]
           ((s-rec root inf []) data nil resource uri "/view/"))
         ))
-  ([view-data binding]
+  ([view-data widget-data binding]
 
-      (let [inf (. ModelFactory createRDFSModel view-data)]
-
+     (let [inf (. ModelFactory createRDFSModel (.union view-data widget-data))]
         (fn [data child resource uri] ((s-rec binding inf []) data child resource uri "/view/"))
         )))
 
-(defn syncer [inf]
+(defn syncer [inf widget-data]
   (fn [command url]
 
     (let [predicate (res (:predicate command))
           binders (get-all-bindings inf predicate)
           bindings (map #(.getSubject %) binders)
-          views (map (partial serializer inf) bindings)]
+          views (map (partial serializer inf widget-data) bindings)]
 
       (map (fn [binder]
 
@@ -605,8 +560,8 @@ INSERT DATA {?s ?p ?o }"
                 (or (= (:type command) "update") (= (:type command) "create"))
                 (assoc command
                   :value
-                  ((serializer inf binding)
-                   (build-query inf url)
+                  ((serializer inf widget-data binding)
+                   (build-query inf widget-data url)
                    (if (= (:type command) "update")
                      (plit (:value command))
                      (res (:value command)))
@@ -625,20 +580,29 @@ INSERT DATA {?s ?p ?o }"
 
 
       )))
+
+(defn commander [uri pred data type]
+  (cond (= type "update")
+        {:uri uri :predicate pred :value data :type type}
+        (= type "create")
+        {:uri uri :predicate pred :value (uuid) :type type}
+        (= type "delete")
+        {:urd uri :predicate pred :value data :type type}))
+
 (defn editor [inf]
   (fn [message]
     (let [uri (:uri message)
           binding (res (:binding message))
           data (:data message)
+          type (:type message)
           statement (get-bound binding inf)
-          func (:update (bound-func binding inf))
           binder (.getURI (.getPredicate statement))
           predicate (.asResource (.getObject statement))
           pred (.getURI predicate)
           resource (res uri) ;;TODO HERE make a serializer for each binding, then use them to populate action with html if this is an htmlable type thing. Consider moving to a pure update based strategy, as then we don't need javascript that's so complicated on the client side. We just regenerate any part of the view that's changed at any time. However, this means things like chat-rooms are not really viable.
           reverse (= binder (db :binds))
           ;;graph-store (. GraphStoreFactory create model)
-          command (func uri pred data)
+          command (commander uri pred data type)
           update (query-builder command reverse)]
       (doall (map (fn [up]
                     (client/post "http://localhost:8000/update/" {:form-params {:update up}})) update))
@@ -653,11 +617,12 @@ INSERT DATA {?s ?p ?o }"
 @prefix ex: <http://logangilmour.com/example-view#> .
 @prefix ont: <http://logangilmour.com/example-ontology#> .
 @prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix w: <http://logangilmour.com/bootstrap-widgets#> .
 
 data:root data:haschild ex:person-manager .
 
 ex:person-manager
-  rdf:type data:row ;
+  rdf:type w:row ;
   dc:title \"The Application\" ;
   dc:description \"Here we are\" ;
   data:haschild ex:person-list-container ;
@@ -665,18 +630,18 @@ ex:person-manager
 
 ex:person-list-container
   data:haschild ex:person-list ;
-  rdf:type data:column4 ;
+  rdf:type w:column4 ;
   data:rank 1 .
 
 ex:person-list
-  rdf:type data:list ;
+  rdf:type w:list ;
   data:binds rdf:type ;
   dc:title \"List of People\" ;
   dc:description \"A list of people contained within the application\" ;
   data:haschild ex:person-projector .
 
 ex:person-projector
-  rdf:type data:projector ;
+  rdf:type w:projector ;
   data:path \"test\" ;
   data:bindo ont:name ;
   dc:title \"select\" ;
@@ -684,14 +649,14 @@ ex:person-projector
   data:projects ex:person-container .
 
 ex:person-container
-  rdf:type data:column8 ;
+  rdf:type w:column8 ;
   dc:title \"Person\" ;
   dc:description \"A person\" ;
   data:rank 2 .
 
 ex:person-container data:haschild ex:person-name-container , ex:person-age , ex:pets-list ,  ex:person-deleter .
 
-ex:person-deleter rdf:type data:deleter ;
+ex:person-deleter rdf:type w:deleter ;
                   data:bindo rdf:type ;
                   dc:title \"Remove\" ;
                   dc:description \"Permanently delete a person from the database\" .
@@ -700,40 +665,50 @@ ex:person-name-container
   data:haschild ex:person-name ;
   dc:title \"thing\" ;
   dc:description \"stuff\" ;
-  rdf:type data:h1 .
+  rdf:type w:h1 .
 
-ex:person-name rdf:type data:text-field ;
+ex:person-name rdf:type w:text-field ;
                data:rank 5 ;
                data:bindo ont:name ;
                dc:title \"Name\" ;
                dc:description \"The name of a person\" .
 
-ex:person-age rdf:type data:text-field ;
+ex:person-age rdf:type w:text-field ;
               data:rank 4 ;
               data:bindo ont:age ;
               dc:title \"Age\" ;
               dc:description \"The age of a person\".
 
-ex:pets-list rdf:type data:list ;
+ex:pets-list rdf:type w:list ;
              data:bindo ont:haspet ;
              dc:title \"Pets\" ;
              dc:description \"A list of the pets a person has\" .
 
 ")
 
-(def mini-view
+(def widgets
   "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix data: <http://logangilmour.com/data-binder#> .
-@prefix ex: <http://logangilmour.com/example-view#> .
-@prefix ont: <http://logangilmour.com/example-ontology#> .
+@prefix w: <http://logangilmour.com/bootstrap-widgets#> .
 
-data:root data:haschild ex:person-name .
+w:projector rdfs:subClassOf data:relator .
 
-ex:person-name rdf:type data:paragraph .
+w:column8 rdfs:subClassOf data:container .
 
-ex:person-name data:bindo ont:name .
+w:column4 rdfs:subClassOf data:container .
 
+w:row rdfs:subClassOf data:container .
+
+w:list rdfs:subClassOf data:relator .
+
+w:deleter rdfs:subClassOf data:relator .
+
+w:paragraph rdfs:subClassOf data:relator .
+
+w:text-field rdfs:subClassOf data:relator .
+
+w:h1 rdfs:subClassOf data:container .
 ")
 
 (def data-binder "
@@ -825,7 +800,7 @@ test:dave ont:haspet \"Monster\" ;
 
 (def broadcast-channel (permanent-channel))
 (def edit (editor (to-model example-view)))
-(def syn (syncer (to-model example-view)))
+(def syn (syncer (to-model example-view) (to-model widgets)))
 
 
 (def channels (atom {}))
@@ -863,7 +838,7 @@ test:dave ont:haspet \"Monster\" ;
 (defroutes main-routes
   (GET "/async/*" [] (wrap-aleph-handler chat-handler))
   (GET "/view/*" [*]
-       (page ((serializer (to-model example-view)) (build-query (to-model example-view) *) (res "http://logangilmour.com/example-ontology#person") *)))
+       (page ((serializer (to-model example-view) (to-model widgets)) (build-query (to-model example-view) (to-model widgets) *) (res "http://logangilmour.com/example-ontology#person") *)))
   (route/resources "/")
   (route/not-found "Page not found"))
 
