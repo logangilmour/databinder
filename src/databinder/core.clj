@@ -55,14 +55,17 @@
   {:projector
    (fn [uri binding active url meta vals]
      (let [s (apply str vals)]
-       (hic/html [:li  {:class (if active "active" "")
+       (hic/html [:a.projector-binding {
+                                        :href url
+                                        :data-uri uri
+                                        :data-binding binding
+                                        } (if (re-matches #"^\s*$" s) "untitled" s)])))
+   :list-item
+   (fn [uri binding active url meta vals]
+     (hic/html [:li  {:class (if active "active" "")
 
-                        :data-uri uri}
-                  [:a.projector-binding {
-                                         :href url
-                                         :data-uri uri
-                                         :data-binding binding
-                                         } (if (re-matches #"^\s*$" s) "untitled" s)]])))
+                      :data-uri uri}
+                vals]))
    :column8
    (fn [uri binding active url meta vals]
      (hic/html [:div.span8 vals]))
@@ -272,7 +275,7 @@
                          (relation-getter data resource))
                current (if mypath (get (parse-uri url) mypath))
                active (if mypath (= current (.getURI resource)))
-               myurl (if mypath (str built-url mypath "/" (.getURI resource) "/"))
+               built-url (or (if mypath (str built-url mypath "/" (.getURI resource) "/")) built-url)
                vals (if (empty? sub-calls)
                    (map literalize related)
                    (map seq (apply map vector (map (fn [sub-call]
@@ -285,7 +288,7 @@
              (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
                    (.getURI binding)
                    active
-                   (or myurl built-url)
+                   built-url
                    meta-data
                    vals)))))
      (contains? types (db :container)) ;;TODO make it so we can project from a container.
@@ -295,14 +298,18 @@
                   projected (if (and p (res p))
                               (if (.containsResource data (res p))
                                 (res p)))
-                  ]
+
+                  current (if mypath (get (parse-uri url) mypath))
+
+                  active (if mypath (= current (.getURI resource)))
+                  built-url (or (if mypath (str built-url mypath "/" (.getURI resource) "/")) built-url)]
 
               (if ppath
                 (if projected
                   (func
                    (.getURI resource)
                    (.getURI binding)
-                   nil
+                   active
                    built-url
                    meta-data
                    (map (fn [sub-call] (sub-call data nil projected url (str built-url ppath "/" (.getURI resource) "/"))) sub-calls))
@@ -310,7 +317,7 @@
                 (func
                  (.getURI resource)
                  (.getURI binding)
-                 nil
+                 active
                  built-url
                  meta-data
                  (map (fn [sub-call] (sub-call data nil resource url built-url)) sub-calls))
@@ -358,18 +365,18 @@
            (map (fn [child] (qb child model uri)) children)
            '())
          (map (fn [child] (qb child model uri)) children))]
-    (println types "=" (db :container) " or " (db :relator))
+
     (cond (contains? types (db :relator))
           (let [statement (get-bound binding model)
                 binder (.getURI (.getPredicate statement))
                 predicate (.asResource (.getObject statement)) ;;TODO handle type thing with path thing
                 reverse (= binder (db :binds))]
-            (println "got here 1")
+
             [{:pred (.getURI predicate) :rev reverse :path onpath} subs])
 
           (contains? types (db :container))
-          (do (println "got here 2")
-            subs)
+
+          subs
           )))
 
 
@@ -460,7 +467,7 @@ CONSTRUCT {"
     (.add qm "root" (res "http://logangilmour.com/example-ontology#person"))  ;; TODO DIRTY DIRTY HACKS
 
     (let [done (.toString (new ParameterizedSparqlString s qm))]
-      (println (render-query query false) "\n\n\n" (render-graph query) "\n\n\n" done)
+
       (.execConstruct
        (. QueryExecutionFactory sparqlService
           "http://localhost:8000/sparql/"
@@ -532,6 +539,7 @@ INSERT DATA {?s ?p ?o }"
             root (.asResource (.getObject (.getProperty inf
                                                         (res (:root db))
                                                         (prop (:haschild db)))))]
+
 
         (fn [data resource uri]
           ((s-rec root inf []) data nil resource uri "/view/"))
@@ -638,15 +646,19 @@ ex:person-list
   data:binds rdf:type ;
   dc:title \"List of People\" ;
   dc:description \"A list of people contained within the application\" ;
-  data:haschild ex:person-projector .
+  data:haschild ex:person-item .
+
+ex:person-item
+  rdf:type w:list-item ;
+  data:path \"test\" ;
+  data:haschild ex:person-projector ;
+  data:projects ex:person-container .
 
 ex:person-projector
   rdf:type w:projector ;
-  data:path \"test\" ;
   data:bindo ont:name ;
   dc:title \"select\" ;
-  dc:description \"choose a person\" ;
-  data:projects ex:person-container .
+  dc:description \"choose a person\" .
 
 ex:person-container
   rdf:type w:column8 ;
@@ -701,6 +713,8 @@ w:column4 rdfs:subClassOf data:container .
 w:row rdfs:subClassOf data:container .
 
 w:list rdfs:subClassOf data:relator .
+
+w:list-item rdfs:subClassOf data:container .
 
 w:deleter rdfs:subClassOf data:relator .
 
