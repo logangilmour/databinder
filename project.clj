@@ -15,6 +15,7 @@
                                               javax.jms/jms
                                               com.sun.jdmk/jmxtools
                                               com.sun.jmx/jmxri]]
-                 [org.clojure/tools.logging "0.2.3"]]
+                 [org.clojure/tools.logging "0.2.3"]
+                 [org.mozilla/rhino "1.7R4"]]
   :repositories { "apache-releases" "http://repository.apache.org/content/repositories/releases/"}
   :main databinder.core)

@@ -17,7 +17,8 @@
   (:import (com.hp.hpl.jena.rdf.model ModelFactory ResourceFactory Model SimpleSelector)
            (java.io ByteArrayInputStream)
            (com.hp.hpl.jena.query QuerySolutionMap ParameterizedSparqlString QueryExecutionFactory)
-           (com.hp.hpl.jena.update GraphStoreFactory UpdateExecutionFactory)))
+           (com.hp.hpl.jena.update GraphStoreFactory UpdateExecutionFactory)
+           [org.mozilla.javascript Context ScriptableObject Function]))
 
 
 
@@ -789,6 +790,17 @@ w:h1 rdfs:subClassOf data:container .
        (page ((serializer (to-model example-view) (to-model widgets)) (build-query (to-model example-view) (to-model widgets) *) (res "http://logangilmour.com/example-ontology#person") *)))
   (route/resources "/")
   (route/not-found "Page not found"))
+
+(defn test-rhino []
+  (let [cx (Context/enter)
+        scope (.initStandardObjects cx)
+        ret (.evaluateString cx scope "funcs = {'http://example.com/test' : function(input){ return input + 1;} } ;" "<cmd>" 1 nil)
+        funcs (.get scope "funcs" scope)
+        f (.get funcs "http://example.com/test" scope)]
+    (if (instance? Function f)
+      (do (println "got here")
+          (println (.call f cx scope scope (to-array [5]))))
+      (println f " is not a function."))))
 
 (defn -main
   [& args]
