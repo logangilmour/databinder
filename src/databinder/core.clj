@@ -449,7 +449,7 @@
     (doall (map (fn [key] (.add qm (str key) (res (get vals key)))) (keys vals)))
     qm))
 
-(defn uni [] (. ModelFactory createRDFSModel (.union (to-model example-view) (to-model widgets))))
+
 (defn build-query [view-data widget-data uri]
   (let [inf (. ModelFactory createRDFSModel (.union view-data widget-data))
         query  (qbuild inf (parse-uri uri))
@@ -595,7 +595,7 @@ INSERT DATA {?s ?p ?o }"
         (= type "create")
         {:uri uri :predicate pred :value (uuid) :type type}
         (= type "delete")
-        {:urd uri :predicate pred :value data :type type}))
+        {:uri uri :predicate pred :value data :type type}))
 
 (defn editor [inf]
   (fn [message]
@@ -607,9 +607,8 @@ INSERT DATA {?s ?p ?o }"
           binder (.getURI (.getPredicate statement))
           predicate (.asResource (.getObject statement))
           pred (.getURI predicate)
-          resource (res uri) ;;TODO HERE make a serializer for each binding, then use them to populate action with html if this is an htmlable type thing. Consider moving to a pure update based strategy, as then we don't need javascript that's so complicated on the client side. We just regenerate any part of the view that's changed at any time. However, this means things like chat-rooms are not really viable.
+          resource (res uri)
           reverse (= binder (db :binds))
-          ;;graph-store (. GraphStoreFactory create model)
           command (commander uri pred data type)
           update (query-builder command reverse)]
       (doall (map (fn [up]
@@ -666,11 +665,12 @@ ex:person-container
   dc:description \"A person\" ;
   data:rank 2 .
 
-ex:person-container data:haschild ex:person-name-container , ex:person-age , ex:pets-list ,  ex:person-deleter .
+ex:person-container data:haschild ex:person-name-container , ex:person-age ,  ex:person-deleter .
 
 ex:person-deleter rdf:type w:deleter ;
                   data:bindo rdf:type ;
                   dc:title \"Remove\" ;
+                  data:rank 3 ;
                   dc:description \"Permanently delete a person from the database\" .
 
 ex:person-name-container
@@ -680,21 +680,16 @@ ex:person-name-container
   rdf:type w:h1 .
 
 ex:person-name rdf:type w:text-field ;
-               data:rank 5 ;
+               data:rank 1 ;
                data:bindo ont:name ;
                dc:title \"Name\" ;
                dc:description \"The name of a person\" .
 
 ex:person-age rdf:type w:text-field ;
-              data:rank 4 ;
+              data:rank 2 ;
               data:bindo ont:age ;
               dc:title \"Age\" ;
               dc:description \"The age of a person\".
-
-ex:pets-list rdf:type w:list ;
-             data:bindo ont:haspet ;
-             dc:title \"Pets\" ;
-             dc:description \"A list of the pets a person has\" .
 
 ")
 
@@ -725,67 +720,6 @@ w:text-field rdfs:subClassOf data:relator .
 w:h1 rdfs:subClassOf data:container .
 ")
 
-(def data-binder "
-@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix data: <http://logangilmour.com/data-binder#> .
-
-data:root rdf:type rdfs:property ;
-          rdfs:range data:serializer ;
-          rdfs:domain data:view .
-
-data:serializer rdf:type rdfs:class .
-
-data:view rdf:type rdfs:class .
-
-data:binds rdf:type rdfs:property .
-
-data:binds rdfs:domain data:serializer .
-
-data:label rdf:type
-
-
-")
-
-(def ontology "
-@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix ont: <http://logangilmour.com/example-ontology#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-
-ont:person rdf:type rdfs:class .
-
-ont:name rdf:type rdfs:property .
-ont:name rdfs:domain ont:person .
-ont:name rdfs:range xsd:string .
-ont:age rdfs:domain ont:person .
-ont:age rdfs:range xsd:integer .
-
-")
-
-(def data "
-@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix ont: <http://logangilmour.com/example-ontology#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix test: <http://logangilmour.com/test#> .
-
-test:logan ont:name \"Logan Gilmour\" ;
-           rdf:type ont:person ;
-           ont:age 23 .
-
-test:logan ont:haspet \"Dog\" ;
-           ont:haspet \"Tomato\" .
-
-test:dave ont:name \"Dave Davidson\" ;
-          rdf:type ont:person ;
-          ont:age 25 .
-
-test:dave ont:haspet \"Monster\" ;
-          ont:haspet \"Truck\" ;
-          ont:haspet \"Salamander\" .
-")
-
 
 (defn page [body]
   (hic/html
@@ -810,7 +744,7 @@ test:dave ont:haspet \"Monster\" ;
     ;;(logger/init)
     ))
 
-(def data-model (to-model data))
+;;(def data-model (to-model data))
 
 (def broadcast-channel (permanent-channel))
 (def edit (editor (to-model example-view)))
