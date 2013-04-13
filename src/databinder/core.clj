@@ -13,6 +13,7 @@
    [databinder.query :as q]
    [clojure.zip :as z]
    [clojure.walk :as w]
+   [clojure.java.io :as io]
    )
   (:import (com.hp.hpl.jena.rdf.model ModelFactory ResourceFactory Model SimpleSelector)
            (java.io ByteArrayInputStream)
@@ -138,8 +139,6 @@
                                   (.getObject statement)))))))
     ))
 
-;;TODO projectors url should bind itself some stuff so it knows its unique values and its name
-
 (defn literalize [res]
   (if (.isLiteral res)
     (.getString (.asLiteral res))
@@ -157,69 +156,6 @@
 (defn get-bound [binding model]
   (or  (.getProperty model binding (prop (:binds db)))
        (.getProperty model binding (prop (:bindo db)))))
-
-
-;; take a thing and get its function
-;; are there sub-things? if so, get them and recurse
-;; if not, return the result of running the function on the thing and the empty list
-;;
-;; build a thing as we return up the tree.
-;; order things after we build them.
-
-;; necessary: bind:subject, bind:object, bind:order1 ... orderN, bind:haschild.
-
-;; bind:subject takes a function1 and a predicate and makes a function that takes an object and returns the result of calling the function1 on the right side of the predicate, filtered by object.
-;; bind:object ...
-;; bind:order takes a function and a
-
-;; take an object and a predicate and get the binding for that predicate and apply it to the object.
-
-;; a relation-function takes a resource and turns it into a function that takes a resource and turns it into a function... until strings.
-;; haschild: take a bunch of things and call tree-builder on them.
-
-
-
-
-;; The output point is when a function makes a function that returns strings.
-
-;; bind subject, object, and child are all bindings.
-
-;; haschild bind:object haschild
-
-;; Tree-builder algorithm:
-;; Takes an initial resource.
-;; Gets children by getting all properties of a type, then getting the bound functions for them, then , then
-;; recurses on children.
-;; returns aggregation of children run through the function for this resource.
-;; functions needed: make a sequence of children into a single thing, get the necessary children.
-;; haschild makes a function that returns the related values, while contains makes a function returns with the same values.
-
-;; tree builder takes a resource and a property.
-;; tree builder then gets all sub-resources pointed at by the property.
-;; tree builder orders those sub-resources.
-;; tree builder then runs the tree-ify function bound to the predicate on the resource and the children and returns the result.
-;; A binding function takes an object and a list of trees and makes a new tree with the object at the top.
-;; Each predicate that we follow in a tree has a binding function.
-;; A more complex tree of bindings
-
-
-;; tree-build starting from university of alberta, employee
-;; get a bunch of employees, including me
-;; tree-build on each of us for each predicate that matters. Is this by type? This is where recursive assembly comes in - building the right tree of tree-builders.
-;; sort the returned values by the bundled keys.
-;; apply the function for binding the employee relationship to the result of this map and the university.
-;; return
-
-;; parts definitely common to both: Ordering, getting all relations and then mapping a list of functions to them,
-
-;; Container: doesn't relate, just passes its values on to the next function.
-;; Projector: relates and recurses, but with a function that is somewhere else in the tree (no rendered children)
-;; Child: recurses and relates
-
-
-
-
-
 
 (defn relate-right [model predicate resource]
   (iterator-seq (.listObjectsOfProperty model resource predicate)))
@@ -793,14 +729,11 @@ w:h1 rdfs:subClassOf data:container .
 
 (defn test-rhino []
   (let [cx (Context/enter)
-        scope (.initStandardObjects cx)
-        ret (.evaluateString cx scope "funcs = {'http://example.com/test' : function(input){ return input + 1;} } ;" "<cmd>" 1 nil)
-        funcs (.get scope "funcs" scope)
-        f (.get funcs "http://example.com/test" scope)]
-    (if (instance? Function f)
-      (do (println "got here")
-          (println (.call f cx scope scope (to-array [5]))))
-      (println f " is not a function."))))
+        scope (.initStandardObjects cx)]
+    (.evaluateReader cx scope (io/reader (io/resource "base.js")) "base.js" 1 nil)
+    (ScriptableObject/putProperty scope "input" 10)
+    (.evaluateString cx scope "emit(input + 1);" "<cmd>" 1 nil)
+    (println (.get scope "ret" scope))))
 
 (defn -main
   [& args]
