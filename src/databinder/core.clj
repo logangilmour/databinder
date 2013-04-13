@@ -51,7 +51,7 @@
 
 (defn uuid [] (str "urn:uuid:" (java.util.UUID/randomUUID)))
 
-(def db (uris "http://logangilmour.com/data-binder#" :rank :root :binds :bindo  :haschild :container :relator :contains :projects :path))
+(def bind (uris "http://logangilmour.com/data-binder#" :rank :root :subject :object  :child :container :relator :contains :projection :path))
 
 (def funcs
   {:projector
@@ -129,7 +129,7 @@
 (defn relator [statement model resource]
 
   (let [binder (.getURI (.getPredicate statement))]
-    (if (= binder (db :binds))
+    (if (= binder (bind :object))
       (iterator-seq (.listResourcesWithProperty model (prop (.getURI (.asResource (.getObject statement)))) resource ))
       (iterator-seq
        (.listObjectsOfProperty model resource
@@ -154,8 +154,8 @@
                                 (keys dc)))))
 
 (defn get-bound [binding model]
-  (or  (.getProperty model binding (prop (:binds db)))
-       (.getProperty model binding (prop (:bindo db)))))
+  (or  (.getProperty model binding (prop (bind :object)))
+       (.getProperty model binding (prop (bind :subject)))))
 
 (defn relate-right [model predicate resource]
   (iterator-seq (.listObjectsOfProperty model resource predicate)))
@@ -174,16 +174,16 @@
 (defn s-rec [binding model url-parts]
 
   (let [children (sort-by (fn [resource]
-                            (let [p (.getProperty model resource (prop (:rank db)))]
+                            (let [p (.getProperty model resource (prop (bind :rank)))]
                               (if p
                                 (.getString (.asLiteral (.getObject p)))
                                 "")))
                           (concat
-                           (relate-right model (prop (:contains db)) binding)
-                           (relate-right model (prop (:haschild db)) binding)))
+                           (relate-right model (prop (bind :contains)) binding)
+                           (relate-right model (prop (bind :child)) binding)))
 
-        projector (first (relate-left model (prop (:projects db)) binding)) ;;TODO only works for container pointed at by projector for now.
-        path (if projector (first (relate-right model (prop (:path db)) projector)))
+        projector (first (relate-left model (prop (bind :projection)) binding)) ;;TODO only works for container pointed at by projector for now.
+        path (if projector (first (relate-right model (prop (bind :path)) projector)))
 
         bindable (first (relate-right model (prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type") binding))
 
@@ -197,39 +197,12 @@
 
         sub-calls (map (fn [child] (s-rec child model url-parts)) children) ;; make the next part of the tree
         meta-data (get-meta-data binding model)
-        myp (first (relate-right model (prop (:path db)) binding))
+        myp (first (relate-right model (prop (bind :path)) binding))
         mypath (if myp (.getString (.asLiteral myp)))]
 
     (cond
-     (contains? types (db :relator))
-
-     (let [statement (get-bound binding model) ;; fuckery for binding
-           relation-getter (fn [data resource] (relator statement data resource))]
-       (fn [data child resource url built-url]
-
-         (let [related (if child   ;; get sub-resources (a single one if partial rendering)
-                         (seq [child])
-                         (relation-getter data resource))
-               current (if mypath (get (parse-uri url) mypath))
-               active (if mypath (= current (.getURI resource)))
-               built-url (or (if mypath (str built-url mypath "/" (.getURI resource) "/")) built-url)
-               vals (if (empty? sub-calls)
-                   (map literalize related)
-                   (map seq (apply map vector (map (fn [sub-call]
-                                                     (map
-                                                      (fn [val] (sub-call data nil val url built-url))
-                                                      related))
-                                                   sub-calls))))]
-           (if child
-             (hic/html vals) ;;TODO extract this business... maybe?
-             (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
-                   (.getURI binding)
-                   active
-                   built-url
-                   meta-data
-                   vals)))))
-     (contains? types (db :container)) ;;TODO make it so we can project from a container.
-          (fn [data child resource url built-url]
+     (contains? types (bind :container))
+     (fn [data child resource url built-url]
             (let [ppath (if path (.getString (.asLiteral path)))
                   p (get (parse-uri url) ppath)
                   projected (if (and p (res p))
@@ -258,7 +231,36 @@
                  built-url
                  meta-data
                  (map (fn [sub-call] (sub-call data nil resource url built-url)) sub-calls))
-                ))))))
+                )))
+     (contains? types (bind :relator))
+
+     (let [statement (get-bound binding model) ;; fuckery for binding
+           relation-getter (fn [data resource] (relator statement data resource))]
+       (fn [data child resource url built-url]
+
+         (let [related (if child   ;; get sub-resources (a single one if partial rendering)
+                         (seq [child])
+                         (relation-getter data resource))
+               current (if mypath (get (parse-uri url) mypath))
+               active (if mypath (= current (.getURI resource)))
+               built-url (or (if mypath (str built-url mypath "/" (.getURI resource) "/")) built-url)
+               vals (if (empty? sub-calls)
+                   (map literalize related)
+                   (map seq (apply map vector (map (fn [sub-call]
+                                                     (map
+                                                      (fn [val] (sub-call data nil val url built-url))
+                                                      related))
+                                                   sub-calls))))]
+           (if child
+             (hic/html vals) ;;TODO extract this business... maybe?
+             (func (.getURI resource) ;; apply the bound function to the thing, the binding that points at the funtion, meta-data, and the finished children (should be ordered by now).
+                   (.getURI binding)
+                   active
+                   built-url
+                   meta-data
+                   vals)))))
+
+          )))
 
 (defn select [model subject predicate object]
   (iterator-seq (.listStatements (new SimpleSelector subject predicate object))))
@@ -285,15 +287,15 @@
 
 (defn qb [binding model uri] ;; TODO come up with a nice URI aliasing thing
   (let [children (concat
-                  (relate-right model (prop (:haschild db)) binding)
-                  (relate-right model (prop (:projects db)) binding))
+                  (relate-right model (prop (bind :child)) binding)
+                  (relate-right model (prop (bind :projection)) binding))
 
-        projector (first (relate-left model (prop (:projects db)) binding))
-        ppath (if projector (first (relate-left model (prop (:path db)) projector)))
+        projector (first (relate-left model (prop (bind :projection)) binding))
+        ppath (if projector (first (relate-left model (prop (bind :path)) projector)))
 
         types (set (map #(.toString %) (relate-right model (prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type") binding)))
 
-        path (first (relate-right model (prop (:path db)) binding))
+        path (first (relate-right model (prop (bind :path)) binding))
         onpath (if path (get uri (.getString (.asLiteral path))))
 
         subs
@@ -303,15 +305,15 @@
            '())
          (map (fn [child] (qb child model uri)) children))]
 
-    (cond (contains? types (db :relator))
+    (cond (contains? types (bind :relator))
           (let [statement (get-bound binding model)
                 binder (.getURI (.getPredicate statement))
                 predicate (.asResource (.getObject statement)) ;;TODO handle type thing with path thing
-                reverse (= binder (db :binds))]
+                reverse (= binder (bind :object))]
 
             [{:pred (.getURI predicate) :rev reverse :path onpath} subs])
 
-          (contains? types (db :container))
+          (contains? types (bind :container))
 
           subs
           )))
@@ -322,8 +324,8 @@
 
 (defn qbuild [inf uri]
   (let [root (.asResource (.getObject (.getProperty inf
-                                                        (res (:root db))
-                                                        (prop (:haschild db)))))
+                                                        (res (bind :root))
+                                                        (prop (bind :child)))))
         init (qb root inf uri)
 
         numbered (loop [loc (z/vector-zip (flatten-seq init))
@@ -465,8 +467,8 @@ INSERT DATA {?s ?p ?o }"
                    ))
 
 (defn get-all-bindings [inf predicate]
-  (concat (iterator-seq (.listStatements inf nil (prop (:binds db)) predicate))
-          (iterator-seq (.listStatements inf nil (prop (:bindo db)) predicate))))
+  (concat (iterator-seq (.listStatements inf nil (prop (bind :object)) predicate))
+          (iterator-seq (.listStatements inf nil (prop (bind :subject)) predicate))))
 
 
 (defn serializer ;;TODO make this build sub-serializers that work for sub-projections
@@ -474,8 +476,8 @@ INSERT DATA {?s ?p ?o }"
 
      (let [inf (. ModelFactory createRDFSModel (.union view-data widget-data))
             root (.asResource (.getObject (.getProperty inf
-                                                        (res (:root db))
-                                                        (prop (:haschild db)))))]
+                                                        (res (bind :root))
+                                                        (prop (bind :child)))))]
 
 
         (fn [data resource uri]
@@ -498,7 +500,7 @@ INSERT DATA {?s ?p ?o }"
       (map (fn [binder]
 
              (let [binding (.getSubject binder)
-                   reverse (= (.getURI (.getPredicate binder)) (db :binds))]
+                   reverse (= (.getURI (.getPredicate binder)) (bind :object))]
 
               (dissoc
                (cond
@@ -545,7 +547,7 @@ INSERT DATA {?s ?p ?o }"
           predicate (.asResource (.getObject statement))
           pred (.getURI predicate)
           resource (res uri)
-          reverse (= binder (db :binds))
+          reverse (= binder (bind :object))
           command (commander uri pred data type)
           update (query-builder command reverse)]
       (doall (map (fn [up]
@@ -557,42 +559,42 @@ INSERT DATA {?s ?p ?o }"
 (def example-view
   "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix data: <http://logangilmour.com/data-binder#> .
+@prefix bind: <http://logangilmour.com/data-binder#> .
 @prefix ex: <http://logangilmour.com/example-view#> .
 @prefix ont: <http://logangilmour.com/example-ontology#> .
 @prefix dc: <http://purl.org/dc/elements/1.1/> .
 @prefix w: <http://logangilmour.com/bootstrap-widgets#> .
 
-data:root data:haschild ex:person-manager .
+bind:root bind:child ex:person-manager .
 
 ex:person-manager
   rdf:type w:row ;
   dc:title \"The Application\" ;
   dc:description \"Here we are\" ;
-  data:haschild ex:person-list-container ;
-  data:contains ex:person-container .
+  bind:child ex:person-list-container ;
+  bind:contains ex:person-container .
 
 ex:person-list-container
-  data:haschild ex:person-list ;
+  bind:child ex:person-list ;
   rdf:type w:column4 ;
-  data:rank 1 .
+  bind:rank 1 .
 
 ex:person-list
   rdf:type w:list ;
-  data:binds rdf:type ;
+  bind:object rdf:type ;
   dc:title \"List of People\" ;
   dc:description \"A list of people contained within the application\" ;
-  data:haschild ex:person-item .
+  bind:child ex:person-item .
 
 ex:person-item
   rdf:type w:list-item ;
-  data:path \"test\" ;
-  data:haschild ex:person-projector ;
-  data:projects ex:person-container .
+  bind:path \"test\" ;
+  bind:child ex:person-projector ;
+  bind:projection ex:person-container .
 
 ex:person-projector
   rdf:type w:projector ;
-  data:bindo ont:name ;
+  bind:subject ont:name ;
   dc:title \"select\" ;
   dc:description \"choose a person\" .
 
@@ -600,31 +602,31 @@ ex:person-container
   rdf:type w:column8 ;
   dc:title \"Person\" ;
   dc:description \"A person\" ;
-  data:rank 2 .
+  bind:rank 2 .
 
-ex:person-container data:haschild ex:person-name-container , ex:person-age ,  ex:person-deleter .
+ex:person-container bind:child ex:person-name-container , ex:person-age ,  ex:person-deleter .
 
 ex:person-deleter rdf:type w:deleter ;
-                  data:bindo rdf:type ;
+                  bind:subject rdf:type ;
                   dc:title \"Remove\" ;
-                  data:rank 3 ;
+                  bind:rank 3 ;
                   dc:description \"Permanently delete a person from the database\" .
 
 ex:person-name-container
-  data:haschild ex:person-name ;
+  bind:child ex:person-name ;
   dc:title \"thing\" ;
   dc:description \"stuff\" ;
   rdf:type w:h1 .
 
 ex:person-name rdf:type w:text-field ;
-               data:rank 1 ;
-               data:bindo ont:name ;
+               bind:rank 1 ;
+               bind:subject ont:name ;
                dc:title \"Name\" ;
                dc:description \"The name of a person\" .
 
 ex:person-age rdf:type w:text-field ;
-              data:rank 2 ;
-              data:bindo ont:age ;
+              bind:rank 2 ;
+              bind:subject ont:age ;
               dc:title \"Age\" ;
               dc:description \"The age of a person\".
 
@@ -633,28 +635,28 @@ ex:person-age rdf:type w:text-field ;
 (def widgets
   "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix data: <http://logangilmour.com/data-binder#> .
+@prefix bind: <http://logangilmour.com/data-binder#> .
 @prefix w: <http://logangilmour.com/bootstrap-widgets#> .
 
-w:projector rdfs:subClassOf data:relator .
+w:projector rdfs:subClassOf bind:relator .
 
-w:column8 rdfs:subClassOf data:container .
+w:column8 rdfs:subClassOf bind:container .
 
-w:column4 rdfs:subClassOf data:container .
+w:column4 rdfs:subClassOf bind:container .
 
-w:row rdfs:subClassOf data:container .
+w:row rdfs:subClassOf bind:container .
 
-w:list rdfs:subClassOf data:relator .
+w:list rdfs:subClassOf bind:relator .
 
-w:list-item rdfs:subClassOf data:container .
+w:list-item rdfs:subClassOf bind:container .
 
-w:deleter rdfs:subClassOf data:relator .
+w:deleter rdfs:subClassOf bind:relator .
 
-w:paragraph rdfs:subClassOf data:relator .
+w:paragraph rdfs:subClassOf bind:relator .
 
-w:text-field rdfs:subClassOf data:relator .
+w:text-field rdfs:subClassOf bind:relator .
 
-w:h1 rdfs:subClassOf data:container .
+w:h1 rdfs:subClassOf bind:container .
 ")
 
 
