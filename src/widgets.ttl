@@ -1,0 +1,34 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix bind: <http://logangilmour.com/data-binder#> .
+@prefix w: <http://logangilmour.com/bootstrap-widgets#> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+
+dc:title rdf:type bind:parameter .
+
+w:projector
+  rdfs:subClassOf bind:container ;
+  bind:javascript
+"<a class="projector-binding"
+  href="{{{url}}}"
+  data-uri={{{uri}}}
+  data-binding={{{binding}}}>vals</a>" .
+
+
+w:column8 rdfs:subClassOf bind:container .
+
+w:column4 rdfs:subClassOf bind:container .
+
+w:row rdfs:subClassOf bind:container .
+
+w:list rdfs:subClassOf bind:container .
+
+w:list-item rdfs:subClassOf bind:container .
+
+w:deleter rdfs:subClassOf bind:container .
+
+w:paragraph rdfs:subClassOf bind:container .
+
+w:text-field rdfs:subClassOf bind:container .
+
+w:h1 rdfs:subClassOf bind:container .
