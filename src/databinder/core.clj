@@ -31,7 +31,7 @@
 (defn skolemize [model bnode]
 
   (let [id (res (uuid))]
-    (doseq [statement (doall (iterator-seq (.listStatements model nil nil bnode)))]
+    (doseq [statement (doall (iterator-seq (.listStatements model nil nil bnode)))] ;;TODO replace map with doseq in other places
       (let [s (.getSubject statement)
             p (.getPredicate statement)]
         (.remove model statement)
@@ -53,6 +53,42 @@
           (skolemize model o))))
     ))
 
+(def js-env (atom nil))
+
+(defn template-env []
+  (let [cx (Context/enter)
+        scope (.initStandardObjects cx)]
+    (.evaluateReader cx scope (io/reader (io/resource "mustache.js")) "mustache.js" 1 nil)
+    (.evaluateReader cx scope (io/reader (io/resource "templates.js")) "templates.js" 1 nil)
+    (swap! js-env (fn [old] {:context cx :scope scope}))))
+
+(template-env)
+
+(defn mapper [obj vals]
+  (doseq [key (keys vals)]
+    (ScriptableObject/putProperty obj key (get vals key))))
+
+(defn template [js]
+  (fn [resource bindings active url params vals]
+    (let [cx (Context/enter)
+          shared-scope (:scope @js-env)
+          scope (.newObject cx shared-scope)
+          a (.setPrototype scope shared-scope)
+          b (.setParentScope scope nil)]
+      (println "!!!!!!\n\n\n\n " params)
+      (mapper scope params)
+
+      (ScriptableObject/putProperty scope "uri" resource)
+      (ScriptableObject/putProperty scope "binding" bindings)
+      (ScriptableObject/putProperty scope "url" url)
+      (ScriptableObject/putProperty scope "active" active)
+      (ScriptableObject/putProperty scope "vals" (hic/html vals))
+
+      (.evaluateString cx scope "var ret=\"\"; function emit(val){ret=val;};" "<cmd>" 1 nil)
+      (.evaluateString cx scope js "<cmd>" 1 nil) ;;TODO sort out line numbers
+      ;;(.evaluateString cx scope (str "var ret = stuff.resource") "<cmd>" 1 nil)
+      (Context/exit)
+      (.get scope "ret" scope))))
 
 
 (defn to-model [string-data]
@@ -67,6 +103,7 @@
   (apply assoc {} (flatten (map (fn [resource] [resource (str base (name resource))]) resources))))
 
 
+(def dc (uris "http://purl.org/dc/elements/1.1/" :title :description))
 
 (defn prop [uri]
   (. ResourceFactory createProperty uri))
@@ -79,80 +116,7 @@
 
 (defn uuid [] (str "urn:uuid:" (java.util.UUID/randomUUID)))
 
-(def bind (uris "http://logangilmour.com/data-binder#" :rank :root :subject :object :child :container :projection :path))
-
-(def funcs
-  {:projector
-   (fn [uri binding active url meta vals]
-     (let [s (apply str vals)]
-       (hic/html [:a.projector-binding {
-                                        :href url
-                                        :data-uri uri
-                                        :data-binding binding
-                                        } (if (re-matches #"^\s*$" s) "untitled" s)])))
-   :list-item
-   (fn [uri binding active url meta vals]
-     (hic/html [:li  {:class (if active "active" "")
-
-                      :data-uri uri}
-                vals]))
-   :column8
-   (fn [uri binding active url meta vals]
-     (hic/html [:div.span8 vals]))
-
-   :column4
-   (fn [uri binding active url meta vals]
-     (hic/html [:div.span4 vals]))
-   :row
-   (fn [uri binding active url meta vals]
-     (hic/html [:div.row vals]))
-
-   :list
-   (fn [uri binding active url meta vals]
-     (hic/html
-      [:ul {:class "list-binding nav nav-list"
-            :data-uri uri
-            :data-binding binding
-            :data-description (:description meta)}
-       [:li.nav-header (:title meta)]
-       vals]
-      [:a
-       {:href "#"
-        :class "list-add-binding btn"
-        :data-uri uri
-        :data-binding binding} "Create"]))
-
-   :deleter
-   (fn [uri binding active url meta vals]
-     (hic/html [:a.remove-binding
-                {:href "#"
-                 :data-uri uri
-                 :data-binding binding
-                 :data-value (apply str vals)} (:title meta)]))
-
-   :paragraph
-   (fn [uri binding active url meta vals]
-     (hic/html [:p {:data-uri uri
-                    :data-binding binding
-                    :data-description (:description meta)}
-                (:title meta) ": " vals]))
-
-   :text-field
-   (fn [uri binding active url meta vals]
-     (hic/html [:label (str (:title meta) " ")
-                [:input {:type "text"
-                         :class "text-field-binding"
-                         :data-uri uri
-                         :data-binding binding
-                         :data-description (:description meta)
-                         :value (apply str vals)}]]))
-
-   :h1
-   (fn [uri binding active url meta vals]
-     (hic/html [:h1 vals]))})
-
-(def functions (apply assoc {} (flatten (map (fn [key] [(str "http://logangilmour.com/bootstrap-widgets#" (name key)) (get funcs key)]) (keys funcs)))))
-
+(def bind (uris "http://logangilmour.com/data-binder#" :js :parameter :rank :root :subject :object :child :container :projection :path))
 
 (defn relator [statement model resource]
 
@@ -172,17 +136,6 @@
     (.getString (.asLiteral res))
     (.toString res)))
 
-(def dc (uris "http://purl.org/dc/elements/1.1/" :title))
-
-(defn get-meta-data [resource model]
-  (comment (apply assoc {} (flatten (map (fn [local]
-                                    (let [p (.getProperty model resource (prop (dc local)))]
-                                      (if p
-                                        [local (.asLiteral (.getObject p))]
-                                        "fuck")))
-                                  (keys dc)))))
-  {"http://purl.org/dc/elements/1.1/title" "broken"})
-
 (defn get-bound [binding model]
   (or  (.getProperty model binding (prop (bind :object)))
        (.getProperty model binding (prop (bind :subject)))))
@@ -193,6 +146,79 @@
 (defn relate-left [model predicate resource]
   (iterator-seq (.listResourcesWithProperty model predicate resource)))
 
+
+(def widgets (to-model
+
+             "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix bind: <http://logangilmour.com/data-binder#> .
+@prefix w: <http://logangilmour.com/bootstrap-widgets#> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+
+dc:title bind:parameter \"title\".
+
+w:projector
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(projector(this));\" .
+
+
+w:column8
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(column8(this));\" .
+
+w:column4
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(column4(this));\" .
+
+w:row
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(row(this));\" .
+
+w:list
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(list(this));\" .
+
+w:list-item
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(listItem(this));\" .
+
+w:deleter
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(deleter(this));\" .
+
+w:paragraph
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(paragraph(this));\" .
+
+w:text-field
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(textField(this));\" .
+"
+
+              ))
+
+
+(def params
+  (apply assoc {} (flatten (map (fn [statement]
+                                  [(.getURI (.getSubject statement))
+                                   (.getString (.getObject statement))])
+                                (doall (iterator-seq
+                                        (.listStatements widgets
+                                                         nil
+                                                         (prop (bind :parameter))
+                                                         nil)))))))
+
+(defn get-params [resource model]
+  (apply assoc {}
+         (flatten
+          (map (fn [pr]
+                 (let [p (prop pr)]
+                   (let [param (first (relate-right model p resource))]
+                     (if param
+                       [(get params pr) (.getString param)]
+                       [(get params pr) nil]))))
+               (keys params)
+               ))))
 
 (defn parse-uri [uri]
   (let [parts (filter (comp not (partial re-matches #"^\s*$")) (clojure.string/split uri #"/"))]
@@ -231,44 +257,52 @@
                   url-parts)
 
         sub-calls (map (fn [child] (s-rec child model url-parts)) children) ;; make the next part of the tree
-        meta-data (get-meta-data binding model)
+        params (get-params binding model)
 
         myp (first (relate-right model (prop (bind :path)) binding))
         mypath (if myp (.getString (.asLiteral myp)))]
 
     (cond
      (contains? types (bind :container))
-     (fn [data child resource url built-url]
-       (let [ppath (if path (.getString (.asLiteral path)))
-             func (reduce (fn [accum val] (or accum (get functions val))) nil types)
-             p (get (parse-uri url) ppath)
-             projected (if (and p (res p))
-                         (if (.containsResource data (res p))
-                           (res p)))
+     (let [func (template (.getString
+                           (reduce (fn [accum val]
+                                     (or accum
+                                         (first (relate-right model
+                                                              (prop (bind :js))
+                                                              (res val) ))))
+                                   nil types)))
+           ]
+         (fn [data child resource url built-url]
+           (let [ppath (if path (.getString (.asLiteral path)))
 
-             current (if mypath (get (parse-uri url) mypath))
+                 p (get (parse-uri url) ppath)
+                 projected (if (and p (res p))
+                             (if (.containsResource data (res p))
+                               (res p)))
 
-             active (if mypath (= current (.getURI resource)))
-             built-url (or (if mypath (str built-url mypath "/" (.getURI resource) "/")) built-url)]
+                 current (if mypath (get (parse-uri url) mypath))
 
-         (if ppath
-           (if projected
-             (func
-              (.getURI resource)
-              bindings ;;(.getURI binding)
-              active
-              built-url
-              meta-data
-              (map (fn [sub-call] (sub-call data nil projected url (str built-url ppath "/" (.getURI resource) "/"))) sub-calls))
-             "")
-           (func
-            (.getURI resource)
-            bindings ;;(.getURI binding)
-            active
-            built-url
-            meta-data
-            (map (fn [sub-call] (sub-call data nil resource url built-url)) sub-calls))
-           )))
+                 active (if mypath (= current (.getURI resource)))
+                 built-url (or (if mypath (str built-url mypath "/" (.getURI resource) "/")) built-url)]
+
+             (if ppath
+               (if projected
+                 (func
+                  (.getURI resource)
+                  bindings ;;(.getURI binding)
+                  active
+                  built-url
+                  params
+                  (map (fn [sub-call] (sub-call data nil projected url (str built-url ppath "/" (.getURI resource) "/"))) sub-calls))
+                 "")
+               (func
+                (.getURI resource)
+                bindings ;;(.getURI binding)
+                active
+                built-url
+                params
+                (map (fn [sub-call] (sub-call data nil resource url built-url)) sub-calls))
+               ))))
 
      :default
      (let [statement (get-bound binding model) ;; fuckery for binding
@@ -637,36 +671,6 @@ ex:person-container
 
 "))
 
-(def widgets (to-model
-              "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix bind: <http://logangilmour.com/data-binder#> .
-@prefix w: <http://logangilmour.com/bootstrap-widgets#> .
-@prefix dc: <http://purl.org/dc/elements/1.1/> .
-
-dc:title rdf:type bind:parameter .
-
-w:projector rdfs:subClassOf bind:container .
-
-w:column8 rdfs:subClassOf bind:container .
-
-w:column4 rdfs:subClassOf bind:container .
-
-w:row rdfs:subClassOf bind:container .
-
-w:list rdfs:subClassOf bind:container .
-
-w:list-item rdfs:subClassOf bind:container .
-
-w:deleter rdfs:subClassOf bind:container .
-
-w:paragraph rdfs:subClassOf bind:container .
-
-w:text-field rdfs:subClassOf bind:container .
-
-w:h1 rdfs:subClassOf bind:container .
-"))
-
 
 (defn page [body]
   (hic/html
@@ -739,13 +743,6 @@ w:h1 rdfs:subClassOf bind:container .
   (route/resources "/")
   (route/not-found "Page not found"))
 
-(defn test-rhino []
-  (let [cx (Context/enter)
-        scope (.initStandardObjects cx)]
-    (.evaluateReader cx scope (io/reader (io/resource "base.js")) "base.js" 1 nil)
-    (ScriptableObject/putProperty scope "input" 10)
-    (.evaluateString cx scope "emit(input + 1);" "<cmd>" 1 nil)
-    (println (.get scope "ret" scope))))
 
 (defn -main
   [& args]
