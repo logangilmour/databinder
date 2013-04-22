@@ -6,6 +6,30 @@ function process(type,uri,binding,value){
             $(this).val(value);
         }
     });
+    $("input.checkbox-binding").each(function(i){
+        if($(this).data("uri")==uri &&
+           $(this).data("binding")==binding &&
+           $(this).val()==value){
+           //if(/checked='checked'/.test(value)){
+            if(type=="delete"){
+                $(this).prop("checked",false);
+            }else if(type=="create"){
+                $(this).prop("checked",true);
+            }
+        }
+    });
+    $("input.date-binding").each(function(i){
+        if($(this).data("uri")==uri &&
+           $(this).data("binding")==binding){
+          $(this).val(value);
+        }
+    });
+    $(".bound").each(function(i){
+        if($(this).data("uri")==uri &&
+           $(this).data("binding")==binding){
+            $(this).html(value);
+        }
+    });
     $("a.projector-binding").each(function(i){
         if($(this).data("uri")==uri &&
            $(this).data("binding")==binding){
@@ -58,6 +82,28 @@ function setup(){
                          $(evt.target).data("old-value",newval);
                      }
                  });
+    $("body").on("focusout", ".date-binding",
+                 function(evt){
+                     var el = $(evt.target);
+
+                         ws.send(
+                             JSON.stringify(
+                                 {uri: el.data("uri"),
+                                  binding: el.data("binding"),
+                                  data:el.val(),
+                                  type:"update"}));
+                 });
+    $("body").on("changeDate", ".date-binding",
+                 function(evt){
+                     var el = $(evt.target);
+
+                         ws.send(
+                             JSON.stringify(
+                                 {uri: el.data("uri"),
+                                  binding: el.data("binding"),
+                                  data:el.val(),
+                                  type:"update"}));
+                 });
     $("body").on("click", ".list-add-binding",
                  function(evt){
                      var el = $(evt.target);
@@ -68,6 +114,23 @@ function setup(){
                                   binding: el.data("binding"),
                                   data:"",
                                   type:"create"}));
+                 });
+    $("body").on("click", "input.checkbox-binding",
+                 function(evt){
+                     var el = $(evt.target);
+                     var type = "create";
+                     if(!el.prop("checked")){
+                         type="delete";
+                     }
+                     var mes = JSON.stringify({uri: el.data("uri"),
+                                 binding: el.data("binding"),
+                                 data:el.val(),
+                                 type:type});
+
+                     //alert(mes);
+                     ws.send(
+                            mes
+                                );
                  });
     $("body").on("click", ".remove-binding",
                  function(evt){

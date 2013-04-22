@@ -19,7 +19,7 @@
            (java.io ByteArrayInputStream)
            (com.hp.hpl.jena.query QuerySolutionMap ParameterizedSparqlString QueryExecutionFactory)
            (com.hp.hpl.jena.update GraphStoreFactory UpdateExecutionFactory)
-           [org.mozilla.javascript Context ScriptableObject Function]))
+           [org.mozilla.javascript Context ScriptableObject Function NativeArray]))
 
 
 
@@ -27,6 +27,17 @@
   `(let [expr# (~fun ~@args)] (println (str ~string " : " expr#)) expr#))
 
 ;; For now, we'll just be building an rdf model out of turtle-data, so this thing is simple and dumb. Later it should go to a url and get arbitrary RDF.
+
+(defn prop [uri]
+  (. ResourceFactory createProperty uri))
+
+(defn res [uri]
+  (. ResourceFactory createResource uri))
+
+(defn plit [val]
+  (. ResourceFactory createPlainLiteral val))
+
+(defn uuid [] (str "urn:uuid:" (java.util.UUID/randomUUID)))
 
 (defn skolemize [model bnode]
 
@@ -75,7 +86,7 @@
           scope (.newObject cx shared-scope)
           a (.setPrototype scope shared-scope)
           b (.setParentScope scope nil)]
-      (println "!!!!!!\n\n\n\n " params)
+
       (mapper scope params)
 
       (ScriptableObject/putProperty scope "uri" resource)
@@ -83,6 +94,9 @@
       (ScriptableObject/putProperty scope "url" url)
       (ScriptableObject/putProperty scope "active" active)
       (ScriptableObject/putProperty scope "vals" (hic/html vals))
+      (ScriptableObject/putProperty scope "values" (new NativeArray (to-array (flatten vals))))
+      (ScriptableObject/putProperty scope "first" (first (flatten vals)))
+      (ScriptableObject/putProperty scope "second" (second (flatten vals)))
 
       (.evaluateString cx scope "var ret=\"\"; function emit(val){ret=val;};" "<cmd>" 1 nil)
       (.evaluateString cx scope js "<cmd>" 1 nil) ;;TODO sort out line numbers
@@ -105,18 +119,8 @@
 
 (def dc (uris "http://purl.org/dc/elements/1.1/" :title :description))
 
-(defn prop [uri]
-  (. ResourceFactory createProperty uri))
 
-(defn res [uri]
-  (. ResourceFactory createResource uri))
-
-(defn plit [val]
-  (. ResourceFactory createPlainLiteral val))
-
-(defn uuid [] (str "urn:uuid:" (java.util.UUID/randomUUID)))
-
-(def bind (uris "http://logangilmour.com/data-binder#" :js :parameter :rank :root :subject :object :child :container :projection :path))
+(def bind (uris "http://logangilmour.com/data-binder#" :js :parameter :rank :root :application :subject :object :child :container :projection :path))
 
 (defn relator [statement model resource]
 
@@ -157,6 +161,10 @@
 
 dc:title bind:parameter \"title\".
 
+w:before bind:parameter \"before\".
+
+w:after bind:parameter \"after\".
+
 w:projector
   rdfs:subClassOf bind:container ;
   bind:js \"emit(projector(this));\" .
@@ -186,6 +194,30 @@ w:deleter
   rdfs:subClassOf bind:container ;
   bind:js \"emit(deleter(this));\" .
 
+w:span
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(span(this));\" .
+
+w:plain
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(this.vals);\" .
+
+w:checkbox
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(checkbox(this));\" .
+
+w:check
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(check(this));\" .
+
+w:value
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(value(this));\" .
+
+w:creator
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(creator(this));\" .
+
 w:paragraph
   rdfs:subClassOf bind:container ;
   bind:js \"emit(paragraph(this));\" .
@@ -193,6 +225,14 @@ w:paragraph
 w:text-field
   rdfs:subClassOf bind:container ;
   bind:js \"emit(textField(this));\" .
+
+w:popup
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(popup(this));\".
+
+w:datepicker
+  rdfs:subClassOf bind:container ;
+  bind:js \"emit(datepicker(this));\".
 "
 
               ))
@@ -234,6 +274,14 @@ w:text-field
   (filter #(not (contains? (types model %) (bind :container))) (relate-right model (prop (bind :child)) binding)))
 
 
+(defn rdf->str [resource]
+  (cond
+   (.isResource resource)
+   (.getURI resource)
+   (.isLiteral resource)
+   (.getString resource)
+   :default
+   (.toString resource)))
 
 (defn s-rec [binding model url-parts]
 
@@ -249,6 +297,8 @@ w:text-field
 
         projector (first (relate-left model (prop (bind :projection)) binding)) ;;TODO only works for container pointed at by projector for now.
         path (if projector (first (relate-right model (prop (bind :path)) projector)))
+
+        root (first (relate-right model (prop (bind :root)) binding))
 
         types (types model binding)
 
@@ -285,16 +335,27 @@ w:text-field
                  active (if mypath (= current (.getURI resource)))
                  built-url (or (if mypath (str built-url mypath "/" (.getURI resource) "/")) built-url)]
 
-             (if ppath
-               (if projected
-                 (func
-                  (.getURI resource)
+             (cond
+              root
+              (func
+               (.getURI root)
+                bindings ;;(.getURI binding) TODO make it so we actually support multiple bindings in the js
+                active
+                built-url
+                params
+                (map (fn [sub-call] (sub-call data nil root url built-url)) sub-calls))
+              ppath
+              (if projected
+                (func
+                  (.getURI projected)
                   bindings ;;(.getURI binding)
                   active
                   built-url
                   params
                   (map (fn [sub-call] (sub-call data nil projected url (str built-url ppath "/" (.getURI resource) "/"))) sub-calls))
-                 "")
+                "") ;;TODO what is this exactly?
+              :default
+
                (func
                 (.getURI resource)
                 bindings ;;(.getURI binding)
@@ -306,23 +367,41 @@ w:text-field
 
      :default
      (let [statement (get-bound binding model) ;; fuckery for binding
-           relation-getter (fn [data resource] (relator statement data resource))]
+
+           relation-getter (fn [data resource] (filter #(not (and (.isResource %) (not (.getURI %)))) (relator statement data resource)))]
        (fn [data child resource url built-url]
 
-         (let [related (if child   ;; get sub-resources (a single one if partial rendering)
+         (let [ppath (if path (.getString (.asLiteral path)))
+
+               p (get (parse-uri url) ppath)
+               projected (if (and p (res p))
+                           (if (.containsResource data (res p))
+                             (res p)))
+
+               rel (if child   ;; get sub-resources (a single one if partial rendering)
                          (seq [child])
                          (relation-getter data resource))
+
+               related (if projected
+                         (seq (if (contains? (set rel) projected)
+                                [projected]
+                                []
+                                ))
+                         rel)
+
+
                current (if mypath (get (parse-uri url) mypath))
                active (if mypath (= current (.getURI resource)))
                built-url (or (if mypath (str built-url mypath "/" (.getURI resource) "/")) built-url)
                vals (if (empty? sub-calls)
                    (map literalize related)
-                   (map seq (apply map vector (map (fn [sub-call]
-                                                     (map
-                                                      (fn [val] (sub-call data nil val url built-url))
-                                                      related))
-                                                   sub-calls))))]
-           (hic/html vals))))
+                   (map (fn [sub-call]
+                          (map
+                           (fn [val]
+                             (sub-call data nil val url built-url))
+                           related))
+                        sub-calls))]
+           vals)))
 
           )))
 
@@ -384,7 +463,7 @@ w:text-field
 
 (defn qbuild [inf uri]
   (let [root (.asResource (.getObject (.getProperty inf
-                                                        (res (bind :root))
+                                                        (res (bind :application))
                                                         (prop (bind :child)))))
         init (qb root inf uri)
 
@@ -458,20 +537,25 @@ PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX ont: <http://logangilmour.com/example-ontology#>
 
 CONSTRUCT {"
-             (render-graph query)
+             "?s ?p ?o";;(render-graph query)
              "} WHERE {"
-             (render-query query false)
+             "?s ?p ?o";;(render-query query false)
              "}"
              )]
-    (.add qm "root" (res "http://logangilmour.com/example-ontology#person"))  ;; TODO DIRTY DIRTY HACKS
 
-    (let [done (.toString (new ParameterizedSparqlString s qm))]
+    (.add qm "root" (res "http://xmlns.com/foaf/0.1/Person"))  ;; TODO DIRTY DIRTY HACKS
 
-      (.execConstruct
+    (let [done (.toString (new ParameterizedSparqlString s qm))
+
+          rval (.execConstruct
        (. QueryExecutionFactory sparqlService
           "http://localhost:8000/sparql/"
           done
-          )))))
+          ))]
+
+      rval
+
+      )))
 
 (defn query-builder [command reversed]
   (cond (= (:type command) "update")
@@ -498,7 +582,7 @@ INSERT DATA {?s ?p ?o }"
                            (res (:uri command))
                            (prop (:predicate command))
                            (plit (:value command)))])
-        (= (:type command) "create")
+        (or (= (:type command) "create") (= (:type command) "assoc"))
         (if reversed
           [(simple-update "INSERT DATA { ?s ?p ?o }"
                            (res (:value command))
@@ -536,7 +620,7 @@ INSERT DATA {?s ?p ?o }"
 
      (let [inf (. ModelFactory createRDFSModel (.union view-data widget-data))
             root (.asResource (.getObject (.getProperty inf
-                                                        (res (bind :root))
+                                                        (res (bind :application))
                                                         (prop (bind :child)))))]
 
 
@@ -546,7 +630,7 @@ INSERT DATA {?s ?p ?o }"
   ([view-data widget-data binding]
 
      (let [inf (. ModelFactory createRDFSModel (.union view-data widget-data))]
-        (fn [data child resource uri] ((s-rec binding inf []) data child resource uri "/view/"))
+       (fn [data child resource uri] (hic/html ((s-rec binding inf []) data child resource uri "/view/")))
         )))
 
 (defn syncer [inf widget-data]
@@ -562,42 +646,63 @@ INSERT DATA {?s ?p ?o }"
              (let [binding (.getSubject binder)
                    reverse (= (.getURI (.getPredicate binder)) (bind :object))]
 
-              (dissoc
-               (cond
-                (or (= (:type command) "update") (= (:type command) "create"))
-                (assoc command
-                  :value
-                  ((serializer inf widget-data binding)
-                   (build-query inf widget-data url)
-                   (if (= (:type command) "update")
-                     (plit (:value command))
-                     (res (:value command)))
-                   (res (:uri command))
-                   url)
-                  :binding
-                  (.toString binding))
+               (dissoc
+                (cond
+                 (or (= (:type command) "update") (= (:type command) "create"))
 
-                (= (:type command) "delete")
-                (assoc
-                    (if reverse
+                 (if reverse
+                   (assoc command
+                     :uri (:value command)
+                     :value
+                     ((serializer inf widget-data binding)
+                      (build-query inf widget-data url)
+                      (res (:uri command))
+                      (if (= (:type command) "update")
+                        (plit (:value command))
+                        (res (:value command)))
+                      url)
+                     :binding
+                     (.toString binding))
+                   (assoc command
+                     :value
+                     ((serializer inf widget-data binding)
+                      (build-query inf widget-data url)
+                      (if (= (:type command) "update")
+                        (plit (:value command))
+                        (res (:value command)))
+                      (res (:uri command))
+                      url)
+                     :binding
+                     (.toString binding)))
+
+                 (or (= (:type command) "delete") (= (:type command) "assoc"))
+                 (assoc
+                     (if reverse
                       (assoc command :uri (:value command) :value (:uri command))
                       command)
-                  :binding (.toString binding))) :predicate)))
+                   :binding (.toString binding))) :predicate)))
            binders)
 
 
       )))
-
+(comment (if reverse
+                         (assoc command :uri (:value command) :value (:uri command))
+                         command))
 (defn commander [uri pred data type]
-  (cond (= type "update")
-        {:uri uri :predicate pred :value data :type type}
-        (= type "create")
-        {:uri uri :predicate pred :value (uuid) :type type}
-        (= type "delete")
-        {:uri uri :predicate pred :value data :type type}))
+
+  (cond
+   (= type "assoc")
+   {:uri uri :predicate pred :value data :type type}
+   (= type "update")
+   {:uri uri :predicate pred :value data :type type}
+   (= type "create")
+   {:uri uri :predicate pred :value (if (= data "") (uuid) data) :type type}
+   (= type "delete")
+   {:uri uri :predicate pred :value data :type type}))
 
 (defn editor [inf]
   (fn [message]
+
     (let [uri (:uri message)
           binding (res (:binding message))
           data (:data message)
@@ -609,10 +714,13 @@ INSERT DATA {?s ?p ?o }"
           resource (res uri)
           reverse (= binder (bind :object))
           command (commander uri pred data type)
+
           update (query-builder command reverse)]
       (doall (map (fn [up]
                     (client/post "http://localhost:8000/update/" {:form-params {:update up}})) update))
-      command)))
+      (if reverse
+                      (assoc command :uri (:value command) :value (:uri command))
+                      command))))
 
 
 
@@ -621,19 +729,23 @@ INSERT DATA {?s ?p ?o }"
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix bind: <http://logangilmour.com/data-binder#> .
 @prefix ex: <http://logangilmour.com/example-view#> .
-@prefix ont: <http://logangilmour.com/example-ontology#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
 @prefix dc: <http://purl.org/dc/elements/1.1/> .
 @prefix w: <http://logangilmour.com/bootstrap-widgets#> .
 
-bind:root bind:child ex:person-manager .
+bind:application bind:child ex:person-manager .
 
 ex:person-manager
   rdf:type w:row ;
+  bind:root foaf:Person ;
   bind:child
-    [bind:child ex:person-list ;
+    [bind:child ex:person-list ,
+      [rdf:type w:creator ;
+       bind:rank 2;
+       bind:child [bind:object rdf:type]] ;
      rdf:type w:column4 ;
-     bind:rank 1] ;
-  bind:child ex:person-container .
+     bind:rank 1] ,
+    ex:person-container .
 
 
 ex:person-list
@@ -644,30 +756,90 @@ ex:person-list
      bind:child
        [rdf:type w:list-item ;
         bind:path \"test\" ;
-        bind:projection ex:person-container ;
+        bind:projection ex:person-container, ex:person-relator, ex:pr;
         bind:child
           [rdf:type w:projector ;
-           bind:child [bind:subject ont:name]]]] .
+           bind:child ex:fullName]]] .
+
+ex:fullName #bind:subject foaf:givenName .
+  rdf:type w:span ;
+  bind:child
+    [rdf:type w:span ;
+     w:after \" \";
+     bind:child [bind:subject foaf:givenName] ;
+     bind:rank 1],
+    [rdf:type w:span ;
+     bind:child [bind:subject foaf:familyName] ;
+     bind:rank 2] .
+
+ex:known
+  dc:title \"Knows\" ;
+  rdf:type w:list ;
+  bind:rank 6 ;
+  bind:child ex:knower .
+
+ex:knower bind:subject foaf:knows;
+     bind:child
+      [rdf:type w:list-item;
+       bind:child ex:fullName] .
+
+ex:mini-list
+  dc:title \"All\" ;
+  rdf:type w:list ;
+  bind:rank 0 ;
+  bind:root foaf:Person ;
+  bind:child
+    [bind:object rdf:type ;
+     bind:child
+       [rdf:type w:list-item ;
+        bind:child
+          ex:fullName,
+          [rdf:type w:checkbox ;
+           bind:child
+            ex:pr,
+            ex:person-relator]]] .
+
+ex:pr
+  bind:object foaf:knows;
+  bind:rank 2 ;
+  bind:child
+    [rdf:type w:value] .
+
+ex:person-relator rdf:type w:value .
 
 ex:person-container
   dc:title \"Person\" ;
   rdf:type w:column8 ;
   bind:rank 2 ;
   bind:child
-    [dc:title \"Name\" ;
+    [dc:title \"Given Name\" ;
      rdf:type w:text-field ;
      bind:rank 1 ;
-     bind:child [bind:subject ont:name]] ,
-
-    [dc:title \"Age\" ;
+     bind:child [bind:subject foaf:givenName]] ,
+    [dc:title \"Family Name\" ;
      rdf:type w:text-field ;
      bind:rank 2 ;
-     bind:child [bind:subject ont:age]] ,
+     bind:child [bind:subject foaf:familyName]] ,
+
+    [dc:title \"Birthday\" ;
+     rdf:type w:datepicker ;
+     bind:rank 3 ;
+     bind:child [bind:subject foaf:birthday]] ,
+
+    [dc:title \"Status\" ;
+     rdf:type w:text-field ;
+     bind:rank 4 ;
+     bind:child [bind:subject foaf:status]] ,
 
     [dc:title \"Remove\" ;
      rdf:type w:deleter ;
-     bind:rank 3 ;
-     bind:child [bind:subject rdf:type]] .
+     bind:rank 5 ;
+     bind:child [bind:subject rdf:type]] ,
+     ex:known ,
+       [rdf:type w:popup;
+        bind:rank 7 ;
+        dc:title \"Edit Known...\" ;
+        bind:child ex:mini-list ] .
 
 "))
 
@@ -679,10 +851,12 @@ ex:person-container
      [:meta {:name "viewport" :content "width=device-width, initial-scale=1.0"}]
 
      [:link {:href "/css/bootstrap.min.css" :rel "stylesheet" :media "screen"}]
+     [:link {:href "/css/datepicker.css" :rel "stylesheet" :media "screen"}]
      [:title "FIXME"]]
     [:body body
      [:script {:type "text/javascript" :src "/js/jquery.min.js"}]
      [:script {:type "text/javascript" :src "/js/bootstrap.min.js"}]
+     [:script {:type "text/javascript" :src "/js/bootstrap-datepicker.js"}]
      [:script {:type "text/javascript" :src "/js/underscore-min.js"}]
      [:script {:type "text/javascript" :src "/js/update.js"}]]
 
@@ -719,7 +893,9 @@ ex:person-container
                           url-ch (or (get all url)
                                      (let [new-ch (channel)]
                                        (println "creating a channel for url " url)
-                                       (siphon (map* encode-json->string (map* (fn [message] (syn message url)) broadcast-channel)) new-ch)
+                                       (siphon (map* encode-json->string (map* (fn [message]
+                                                                                 (syn message url)
+                                                                                 ) broadcast-channel)) new-ch)
                                        new-ch))]
                       (siphon url-ch ch) ;; listen on your url channel
                       (doall (map (partial println "\nConnection: ") (keys all)))

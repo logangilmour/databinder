@@ -3,8 +3,10 @@
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[org.clojure/clojure "1.5.0"]
-                 [aleph "0.3.0-beta14"]
+  :dependencies [[org.clojure/clojure "1.5.1"]
+                 [potemkin "0.2.2-SNAPSHOT"]
+                 [lamina "0.5.0-beta15" :exculusions [potemkin]]
+                 [aleph "0.3.0-beta15" :exclusions [lamina potemkin]]
                  [clj-http "0.7.0"]
                  [org.apache.jena/apache-jena "2.10.0" :extension "pom"]
                  [compojure "1.1.5"]
