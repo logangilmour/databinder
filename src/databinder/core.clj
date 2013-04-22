@@ -809,7 +809,7 @@ ex:person-relator rdf:type w:value .
 
 ex:person-container
   dc:title \"Person\" ;
-  rdf:type w:column8 ;
+  rdf:type w:column4 ;
   bind:rank 2 ;
   bind:child
     [dc:title \"Given Name\" ;
@@ -833,7 +833,7 @@ ex:person-container
 
     [dc:title \"Remove\" ;
      rdf:type w:deleter ;
-     bind:rank 5 ;
+     bind:rank 0 ;
      bind:child [bind:subject rdf:type]] ,
      ex:known ,
        [rdf:type w:popup;
