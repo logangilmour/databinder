@@ -20,6 +20,8 @@ function(){
     };
 };
 
+
+
 //Mustache.compilePartial('untitled', "{{#untitled}}{{title}}{{/untitled}}");
 
 var projector = Mustache.compile(
@@ -29,8 +31,29 @@ var projector = Mustache.compile(
 
 
 var listItem = Mustache.compile(
-"<li class='{{#active}}active{{/active}}' data-uri='{{{uri}}}' data-binding='{{{binding}}}'>"
+"<li class='{{{first}}}' data-uri='{{{uri}}}' data-binding='{{{binding}}}'>"
++ "{{{second}}}</li>");
+
+var li = Mustache.compile(
+"<li data-uri='{{{uri}}}' data-binding='{{{binding}}}'>"
 + "{{{vals}}}</li>");
+
+var navbar = Mustache.compile(
+"<div class='navbar'>"+
+"    <div class='navbar-inner'>"+
+"    <a class='brand' href='#'>{{title}}</a>"+
+"{{{children}}}"+
+"    </div>"+
+"    </div>");
+
+var tabHolder = Mustache.compile(
+"{{{first}}}"+
+"<div class='tab-content'>"+
+"{{{second}}}"+
+"</div>");
+
+var div = Mustache.compile(
+"<div class='{{{classes}}}' data-uri='{{{uri}}}' data-binding='{{{binding}}}'>{{{vals}}}</div>");
 
 var column8 = Mustache.compile(
 "<div class='span8'>{{{vals}}}</div>");
@@ -42,11 +65,15 @@ var row = Mustache.compile(
 "<div class='row'>{{{vals}}}</div>");
 
 var list = Mustache.compile(
-"<ul class='list-binding nav nav-list' data-uri='{{{uri}}}' data-binding='{{{binding}}}'>"
-+ "<li class='nav-header'>{{title}}</li>{{{vals}}}</ul>");
+"{{title}}:<ul class='list-binding nav nav-list {{classes}}' data-uri='{{{uri}}}' data-binding='{{{binding}}}'>"
++ "{{{vals}}}</ul>");
 
 var span = Mustache.compile(
 "{{before}}<span class='bound' data-uri='{{{uri}}}' data-binding='{{{binding}}}'>{{#untitled}}{{{vals}}}{{/untitled}}</span>{{after}}");
+
+var join = function(context){
+    return _.reduce(context.values, function(accum,val){ return accum+context.joinWith+val; }, "");
+};
 
 var deleter = Mustache.compile(
 "<a class='remove-binding' href='#' data-uri='{{{uri}}}' data-binding='{{{binding}}}'"
@@ -73,8 +100,8 @@ var textField = Mustache.compile(
 + "data-binding='{{{binding}}}' value='{{{vals}}}'></label>");
 
 var popup = Mustache.compile(
-"<a href='#myModal' data-target='#myModal' role='button' data-toggle='modal'>{{title}}</a>"
-+ "<div id='myModal' class='modal hide fade' tabindex='-1' role='dialog' aria-labelledby='myModalLabel' aria-hidden='true'>"
+"<a href='#modal{{{id}}}' data-target='#modal{{{id}}}' role='button' data-toggle='modal'>{{title}}</a>"
++ "<div id='modal{{{id}}}' class='modal hide fade' tabindex='-1' role='dialog' aria-labelledby='myModalLabel' aria-hidden='true'>"
 +"  <div class='modal-header'>"
 +"    <button type='button' class='close' data-dismiss='modal' aria-hidden='true'>×</button>"
 +"    <h3 id='myModalLabel'>{{title}}</h3>"
@@ -87,6 +114,9 @@ var popup = Mustache.compile(
 +"  </div>"
 +"</div>");
 
+
+var string = Mustache.compile(
+"{{{title}}}");
 
 var datepicke = Mustache.compile(
 "<div class='input-append date datepicker' data-provide='datepicker' data-date='12-02-2012' data-date-format='dd-mm-yyyy'>"

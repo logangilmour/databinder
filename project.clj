@@ -18,6 +18,7 @@
                                               com.sun.jdmk/jmxtools
                                               com.sun.jmx/jmxri]]
                  [org.clojure/tools.logging "0.2.3"]
-                 [org.mozilla/rhino "1.7R4"]]
+                 [org.mozilla/rhino "1.7R4"]
+                 [org.clojure/core.logic "0.8.3"]]
   :repositories { "apache-releases" "http://repository.apache.org/content/repositories/releases/"}
   :main databinder.core)
