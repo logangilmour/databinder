@@ -537,29 +537,23 @@ w:active rdfs:subClassOf :view ;
         (doseq [onlooker onlookers] ;;end end-children
           (url-index model onlooker (+ index 1)))))))
 
-(defn generics [model node parent-context parent-children local-part child-map] ;;end end-children
+(defn generics [model node parent-context parent-children local-part] ;;end end-children
   (let [local-context (build-context model parent-context node)
 
         local-context (if parent-children (merge-context local-part local-context) local-context)
 
         context (merge parent-context local-context)
 
-        thing (println "\n\n1: " parent-context "\nn2: " local-context "\n\n3: " context)
+        thing (println "\n\n1: " parent-context "\n\n2: " local-context "\n\n3: " context)
 
-        children (doall (relate-right model (prop (bind :child)) node))
+        ;; children (doall (relate-right model (prop (bind :child)) node))
+        children
+        (map #(generics model % parent-context nil nil)
+             (rdf-seq model (get parent-context (bind :children)))) ;;TODO holy shit I'm here
 
         children (if parent-children (concat parent-children children) children)
 
         base (res (first (get-property model node (prop (bind :base)))))
-
-        is-end (first (relate-left model (prop (bind :end)) node))
-
-        children (if is-end
-                   (concat children (get child-map node)) children)
-
-        new-end (res (first (get-property model node (prop (bind :end)))))
-
-        child-map (if new-end (assoc child-map new-end children) child-map)
 
         types (conj (types model node) (bind :compiled))
 
@@ -570,9 +564,9 @@ w:active rdfs:subClassOf :view ;
         ]
     (cond
      subbed
-     (generics model subbed context children local-context child-map) ;;end end-children
+     (generics model subbed context children local-context) ;;end end-children
      (contains? types (bind :view))
-     (generics model base context nil local-context child-map) ;;(conj end new-end) (conj end-children children)
+     (generics model base context nil local-context) ;;(conj end new-end) (conj end-children children)
      :default
      (do
 
@@ -580,11 +574,7 @@ w:active rdfs:subClassOf :view ;
            (.add model
                  (.createStatement model clone (prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
                                    (res type))))
-         (doseq [child (map #(generics model % parent-context nil nil child-map) children )] ;;end end-children
-           (.add model
-                 (.createStatement model clone (prop (bind :child)) child)))
-
-         (copy-context model local-context clone)
+       (copy-context model local-context clone)
 
          clone))))
 
