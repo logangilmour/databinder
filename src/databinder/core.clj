@@ -31,7 +31,7 @@
 
 
 (defn make-map [f1 f2 coll]
-  (apply hash-map (flatten (map (fn [val] [(f1 val) (f2 val)]) coll))))
+  (apply hash-map (apply concat (map (fn [val] [(f1 val) (f2 val)]) coll))))
 
 (defn prop [uri]
   (if uri
@@ -46,6 +46,12 @@
 
 (defn uris [base & resources]
   (apply assoc {} (flatten (map (fn [resource] [resource (str base (name resource))]) resources))))
+
+(defn write-out [model]
+  (with-open [out (io/output-stream "/Users/logangilmour/test.rdf")]
+    (.write model out "TURTLE"))
+
+  nil)
 
 (defn literalize [res]
   (if res
@@ -164,7 +170,7 @@
 (def dc (uris "http://purl.org/dc/elements/1.1/" :title :description))
 
 
-(def bind (uris "http://logangilmour.com/data-binder#" :js :debug :index :rank :root :application :subject :object :child :container :from :path :view :base :param :end :name :binding :compiled))
+(def bind (uris "http://logangilmour.com/data-binder#" :js :debug :index :root :application :subject :object :children :container :from :path :view :base :param :name :binding :compiled))
 
 
 
@@ -214,8 +220,8 @@ w:id :name \"id\".
 :component :param :root .
 :component :param :path .
 :component :param :from .
-:component :param :rank .
 :component :param :index .
+:component :param :children .
 
 :index :name \"index\" .
 
@@ -223,8 +229,8 @@ w:id :name \"id\".
 :object rdfs:domain :binding .
 :subject rdfs:domain :binding .
 
-:child rdfs:domain :component .
-:child rdfs:range :component .
+:children rdfs:domain :component .
+:children rdfs:range rdfs:List .
 
 :binding :param :subject .
 :binding :param :object .
@@ -234,8 +240,6 @@ w:id :name \"id\".
 :container rdfs:subClassOf :component .
 
 :view rdfs:subClassOf :component .
-
-:application rdfs:subClassOf :view .
 
 
 
@@ -262,17 +266,14 @@ w:list
   :js \"emit(list(this));\" .
 
 pl:list rdfs:subClassOf :view ;
-  :param pl:binding, dc:title, :root ;
-  :end pl:ending ;
+  :param pl:binding, dc:title, :root, :children;
   :base [a w:list ;
          :root :root ;
-         :debug \"thing\";
          dc:title dc:title;
-         :child pl:binding] .
+         :children (pl:binding)] .
 
-pl:binding :child pl:ending.
-
-pl:ending a w:li .
+pl:binding :children ([a w:li;
+                       :children :children]).
 
 w:li rdfs:subClassOf :container ;
   :js \"emit(li(this));\" .
@@ -283,80 +284,56 @@ w:list-item-
   :js \"emit(listItem(this));\" .
 
 w:list-item rdfs:subClassOf :view ;
-  :param w:item-url ;
-  :end w:item-end ;
+  :param :path, :children ;
   :base [a w:list-item- ;
-         :path w:item-url ;
-         :child [a w:active ;
-                 w:check-path w:item-url ;
-                 :rank 1 ],
-                w:item-end] .
-
-w:item-end a w:projector ;
-  :rank 2 .
+         :path :path;
+         :children (
+                 [a w:active ;
+                  :from :path]
+                 [a w:projector;
+                  :children :children])] .
 
 w:link-list rdfs:subClassOf :view ;
-  :param w:list-path, w:list-binding, w:list-title;
-  :end w:list-end ;
+  :param :path, w:list-binding, dc:title, :children;
   :base
     [a w:list ;
-     dc:title w:list-title ;
-     :child w:list-binding].
+     dc:title dc:title ;
+     :children (w:list-binding)].
 
-w:list-binding :child w:list-end .
-
-w:list-end a w:list-item;
-  w:item-url w:list-path.
-
+w:list-binding :children (
+  [a w:list-item;
+   :path :path;
+   :children :children]) .
 
 
 tm:type-manager rdfs:subClassOf :view ;
-:param tm:type, tm:title, tm:item , tm:path;
-:end tm:ending;
+:param tm:type, dc:title, tm:item , :path, :children;
 :base
   [a w:row ;
   :root tm:type ;
-  :child
+  :children (
     [a w:column4 ;
-     :rank 1 ;
-     :child
+     :children (
       [a w:link-list ;
-       :rank 1 ;
-       w:list-title tm:title ;
-       w:list-binding [:object rdf:type ] ;
-       :child tm:item ;
-       w:list-path tm:path] ,
+       dc:title dc:title ;
+       w:list-binding [:object rdf:type] ;
+       :children (tm:item) ;
+       :path :path]
       [a w:creator ;
-       :rank 2;
-       :child [:object rdf:type]]] ,
-      tm:ending].
-
-tm:ending a w:column4;
-:from tm:path ;
-:rank 2.
-
-
-
+       :children ([:object rdf:type])])]
+    [a w:column4;
+     :from :path;
+     :children :children])].
 
 
 cb:relator rdfs:subClassOf :view ;
   :param cb:binding , cb:path ;
   :base [a w:checkbox ;
-         :child cb:binding ,
-                [a w:value ; :from cb:path ; :rank 2 ]] .
+         :children (cb:binding
+                [a w:value ; :from cb:path])] .
 
-cb:binding
-  :from cb:path ;
-  :rank 1 ;
-
-  :child [a w:value] .
-
-
-
-w:item :rank 2 .
-
-
-w:activating-list-item rdfs:subClassOf :view .
+cb:binding :from cb:path ;
+  :children ([a w:value]) .
 
 w:deleter
   rdfs:subClassOf :container ;
@@ -421,58 +398,23 @@ w:active-test
   :js \"if(this.vals==this.uri){emit('active')}else{emit('')};\" .
 
 w:active rdfs:subClassOf :view ;
-  :param w:check-path ;
+  :param :from ;
   :base [a w:active-test ;
-         :child [a w:value ; :from w:check-path] ] .
+         :children ([a w:value ; :from :from]) ] .
 "
 
               ))
-
-
-(comment (def params
-    (apply assoc {} (flatten (map (fn [statement]
-                                    [(.getURI (.getSubject statement))
-                                     (.getString (.getObject statement))])
-                                  (doall (iterator-seq
-                                          (.listStatements widgets
-                                                           nil
-                                                           (prop (bind :parameter))
-                                                           nil))))))))
-
-(comment (defn get-params [resource model]
-    (apply assoc {}
-           (flatten
-            (map (fn [pr]
-                   (let [p (prop pr)]
-                     (let [param (first (relate-right model p resource))]
-                       (if param
-                         [(get params pr) (.getString param)]
-                         [(get params pr) nil]))))
-                 (keys params)
-                 )))))
 
 (defn parse-uri [uri]
   (vec (filter (comp not (partial re-matches #"^\s*$")) (clojure.string/split uri #"/"))))
 
 
 (defn types [model binding]
-  (println "Trying to deal with " binding)
-  (if binding
-    (set (map #(.toString %) (relate-right model (prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type") binding)))
+
+  (if (and binding (.isResource binding))
+    (set (map #(.toString %)
+              (relate-right model (prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type") binding)))
     (set [])))
-
-(defn get-subs [model binding] ;;TODO make this deep.
-  (filter #(not (contains? (types model %) (bind :container))) (relate-right model (prop (bind :child)) binding)))
-
-
-(defn rdf->str [resource]
-  (cond
-   (.isResource resource)
-   (.getURI resource)
-   (.isLiteral resource)
-   (.getString resource)
-   :default
-   (.toString resource)))
 
 (defn get-property [model resource property]
   (filter identity (map #(if % (.getURI %))
@@ -484,33 +426,59 @@ w:active rdfs:subClassOf :view ;
 
 
 (defn named-params [model context]
-  (into {} (keep #(if (first %) %) (make-map #(literalize (first (relate-right model (prop (bind :name)) (res %))))
-                           #(literalize ( get context %))
+  (into {} (keep #(if (first %) %)
+                 (make-map #(literalize (first (relate-right model (prop (bind :name)) (res %))))
+                           #(let [property (get context %)]
+                              (if (seq? property)
+                                (doall (map (fn [p] (literalize p)) property))
+                                (literalize property)))
                            (keys context)))))
 
 
-(defn relate-lookup [model context predicate resource]
-  (map #(or (get context (literalize %)) %) (iterator-seq (.listObjectsOfProperty model resource predicate))))
+(defn resolve-property [model context resource]
+  (if (contains? (set (keys context)) (literalize resource))
+    (get context (literalize resource))
+    resource))
 
-(defn build-context [model parent-context binding]
-  (let [params (get-property model binding (prop (bind :param)))
+(defn resolve-list [model property]
+  (if (contains? (types model property) (rdfs :List))
+                (doall (rdf-seq model property))
+                property))
 
-        context (make-map identity
-                          #(first (relate-lookup model parent-context (prop %) binding)) params)
-        ] ;;TODO these could be parameters themselves
-    context))
+(defn build-context [model binding]
+  (let [params (get-property model binding (prop (bind :param)))]
+    (make-map identity
+              #(resolve-list model (first (relate-right model (prop %) binding)))
+                          params)))
+
+(defn resolve-context [model parent-context context]
+  (make-map identity
+            (fn [key]
+              (let [property (get context key)]
+                (if (seq? property)
+                  property
+                  (resolve-property model parent-context property))))
+            (keys context)))
 
 (defn copy-context [model local-context node]
   (doseq [param (keys local-context)]
-    (if (get local-context param)
-      (.add model (.createStatement model node (prop param) (get local-context param))))))
+    (let [property (get local-context param)]
+      (if property
+        (.add model (.createStatement model node (prop param)
+                                      (if (seq? property)
+
+                                        (make-seq model property)
+                                        property)))))))
 
 (defn merge-context [parent-context context]
-  (let [tits (merge parent-context
-                    (into {} (keep (fn [[key val :as pair]] (if (not (get parent-context key)) pair))
-                                   context)))]
-
-    tits))
+  (merge-with
+   (fn [parent child]
+     (if (and (seq? parent) (seq? child))
+       (doall (concat parent child))
+       child))
+   parent-context
+   (into {} (keep (fn [[key val :as pair]] (if (not (get parent-context key)) pair))
+                        context))))
 
 (defn debug [message context]
   (if (get context (bind :debug)) (println "\n" message ", " (get context (bind :debug)) ", " context)))
@@ -518,11 +486,11 @@ w:active rdfs:subClassOf :view ;
 
 (defn url-index [model node index] ;;end end-children
   (if (contains? (types model node) (bind :compiled))
-    (let [context (build-context model {} node)
+    (let [context (build-context model node)
 
           children (doall
                     (filter (fn [child] (empty? (relate-right model (prop (bind :from)) child)))
-                     (relate-right model (prop (bind :child)) node)))
+                     (get context (bind :children))))
 
           path (get context (bind :path))
 
@@ -537,21 +505,25 @@ w:active rdfs:subClassOf :view ;
         (doseq [onlooker onlookers] ;;end end-children
           (url-index model onlooker (+ index 1)))))))
 
-(defn generics [model node parent-context parent-children local-part] ;;end end-children
-  (let [local-context (build-context model parent-context node)
+(defn generics [model node parent-context local-part] ;;end end-children
+  (let [local-context (build-context model node)
 
-        local-context (if parent-children (merge-context local-part local-context) local-context)
-
-        context (merge parent-context local-context)
-
-        thing (println "\n\n1: " parent-context "\n\n2: " local-context "\n\n3: " context)
+        ;;thing (println "\n\n1: " parent-context "\n\n2: " local-context)
 
         ;; children (doall (relate-right model (prop (bind :child)) node))
-        children
-        (map #(generics model % parent-context nil nil)
-             (rdf-seq model (get parent-context (bind :children)))) ;;TODO holy shit I'm here
+        children (get local-context (bind :children))
 
-        children (if parent-children (concat parent-children children) children)
+        local-context
+        (if (seq? children)
+          (assoc local-context (bind :children) (doall (map #(generics model % parent-context nil) children)))
+          local-context
+          )
+
+        local-context (resolve-context model parent-context local-context)
+
+        local-context (if local-part (merge-context local-part local-context) local-context)
+
+        ann (debug (str  "thing: " parent-context) local-context)
 
         base (res (first (get-property model node (prop (bind :base)))))
 
@@ -559,14 +531,19 @@ w:active rdfs:subClassOf :view ;
 
         clone (res (uuid))
 
+
+
         subbed (get parent-context (literalize node))
+
         ;;fuck (debug (str "Hmm: " child-map "\n\n" new-end "\n\n") local-context)
         ]
+
+
     (cond
      subbed
-     (generics model subbed context children local-context) ;;end end-children
+     (generics model subbed parent-context local-context) ;;end end-children
      (contains? types (bind :view))
-     (generics model base context nil local-context) ;;(conj end new-end) (conj end-children children)
+     (generics model base (merge parent-context local-context) nil) ;;(conj end new-end) (conj end-children children)
      :default
      (do
 
@@ -581,18 +558,14 @@ w:active rdfs:subClassOf :view ;
 
 (defn s-rec [binding model]
 
-  (let [context (build-context model {} binding)
+  (let [context (build-context model binding)
 
         params (named-params model context)
-        children (sort-by (fn [resource]
-                            (let [p (.getProperty model resource (prop (bind :rank)))]
-                              (if p
-                                (.getString (.asLiteral (.getObject p)))
-                                "")))
-                          (relate-right model (prop (bind :child)) binding))
-        bindings (clojure.string/join ", "
-                                      (map #(.getURI %)
-                                           (get-subs model binding)))
+        children (get context (bind :children))
+        bindings (clojure.string/join
+                  ", "
+                  (map #(.getURI %)
+                       (filter #(not (contains? (types model %) (bind :container))) children)))
 
         from (get context (bind :from))
 
@@ -623,7 +596,7 @@ w:active rdfs:subClassOf :view ;
 
          (let [url-parts (parse-uri url)
                my-part (get url-parts (- index 1))
-               fuck (println "Mine: " my-part " at index " index " of " url)
+               ;;fuck (println "Mine: " my-part " at index " index " of " url)
                my-res (res my-part)
 
                my-res (if my-res
@@ -707,7 +680,7 @@ w:active rdfs:subClassOf :view ;
 
 (defn prepare [view widgets]
   (let [model (. ModelFactory createRDFSModel (.union view widgets))
-        root (generics model (res (bind :application)) {} nil nil {})]
+        root (generics model (res (bind :application)) {} nil)]
     (url-index model root 0)
     {:root root :model model}))
 
@@ -1021,7 +994,7 @@ INSERT DATA {?s ?p ?o }"
 
 
 
-(def example-view (to-model
+(def example-view-small (to-model
                    "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix : <http://logangilmour.com/data-binder#> .
@@ -1040,34 +1013,11 @@ ex:foaf-manager rdfs:subClassOf :view ;
  [a pl:list;
     :root foaf:Person;
     dc:title \"Butt\";
-    :debug \"the list\";
     pl:binding [:object rdf:type];
-    :child [:subject foaf:givenName]].
-
-
- #[a tm:type-manager ;
- # tm:type foaf:Person ;
- # tm:title \"People\" ;
- # tm:item ex:fullName ;
- # tm:path \"person\" ;
- # :child
- #  [dc:title \"Remove\" ;                     :rank 0 ;
- #    a w:deleter ;
- #    :child [:subject rdf:type]],
-#
-#   [dc:title \"Given Name\" ;                 :rank 1 ;
-#     a w:text-field ;
-#     :child [:subject foaf:givenName]] ,
-#
-#    [dc:title \"Family Name\" ;               :rank 2 ;
-#     a w:text-field ;
-#     :child [:subject foaf:familyName]]]
-
-
-
+    :children ([:subject foaf:givenName])].
 "))
 
-(def example-view-large (to-model
+(def example-view (to-model
                    "
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
@@ -1086,55 +1036,55 @@ ex:foaf-manager rdfs:subClassOf :view ;
 :base
  [a tm:type-manager;
   tm:type foaf:Person;
-  tm:title \"People\";
+  dc:title \"People\";
   tm:item ex:fullName;
-  tm:path \"person\";
-  :child
-   [dc:title \"Remove\";                     :rank 0;
+  :path \"person\";
+  :children (
+   [dc:title \"Remove\";
      a w:deleter;
-     :child [:subject rdf:type]],
+     :children ([:subject rdf:type])]
 
-   [dc:title \"Given Name\";                 :rank 1;
+   [dc:title \"Given Name\";
      a w:text-field;
-     :child [:subject foaf:givenName]],
+     :children ([:subject foaf:givenName])]
 
-    [dc:title \"Family Name\";               :rank 2;
+    [dc:title \"Family Name\";
      a w:text-field;
-     :child [:subject foaf:familyName]],
+     :children ([:subject foaf:familyName])]
 
-    [dc:title \"Birthday\";                  :rank 3;
+    [dc:title \"Birthday\";
      a w:datepicker;
-     :child [:subject foaf:birthday]],
+     :children ([:subject foaf:birthday])]
 
-    [dc:title \"Status\";                    :rank 4;
+    [dc:title \"Status\";
      a w:text-field;
-     :child [:subject foaf:status]],
+     :children ([:subject foaf:status])]
 
-    [a pl:list;                              :rank 5;
+    [a pl:list;
      dc:title \"Knows\";
      pl:binding [:subject foaf:knows];
-     :child ex:fullName],
+     :children (ex:fullName)]
 
-    [a w:popup;                               :rank 6;
+    [a w:popup;
      dc:title \"Edit Known...\";
-     :child
-       [a pl:list;
+     :children
+       ([a pl:list;
         dc:title \"All\";
         :root foaf:Person;
         pl:binding [:object rdf:type];
-        :child
-          ex:fullName,
+        :children (
+          ex:fullName
           [a cb:relator;
            cb:binding [:object foaf:knows];
-           cb:path \"person\"]]]].
+           cb:path \"person\"] ) ] ) ] ) ].
 
 ex:fullName a w:join-text;
   w:join-with \" \";
-  :child
-    [a w:text;                               :rank 1;
-     :child [:subject foaf:givenName]],
-    [a w:text;                               :rank 2;
-     :child [:subject foaf:familyName]].
+  :children (
+    [a w:text;
+     :children ([:subject foaf:givenName])]
+    [a w:text;
+     :children ([:subject foaf:familyName])]).
 
 "))
 
@@ -1226,4 +1176,4 @@ ex:fullName a w:join-text;
 
 
 
-;;(do (use 'databinder.core) (def stop! (-main)) (defn reload [] (stop!) (use 'databinder.core :reload) (def stop! (-main))))
+;;(do (use 'databinder.core :reload) (def stop! (-main)) (defn reload [] (stop!) (use 'databinder.core :reload) (def stop! (-main))))
