@@ -146,10 +146,9 @@
       (ScriptableObject/putProperty scope "uri" resource)
       (ScriptableObject/putProperty scope "binding" bindings)
       (ScriptableObject/putProperty scope "url" url)
-      (ScriptableObject/putProperty scope "vals" (hic/html vals))
-      (ScriptableObject/putProperty scope "values" (new NativeArray (to-array (flatten vals))))
-      (ScriptableObject/putProperty scope "first" (first (flatten vals)))
-      (ScriptableObject/putProperty scope "second" (second (flatten vals))) ;;TODO these won't work if we have n objects
+      (ScriptableObject/putProperty scope "children"
+                                    (new NativeArray
+                                         (to-array (map (fn [val] (hic/html val)) vals))))
 
       (.evaluateString cx scope "var ret=\"\"; function emit(val){ret=val;};" "<cmd>" 1 nil)
       (.evaluateString cx scope js "<cmd>" 1 nil) ;;TODO sort out line numbers
@@ -170,7 +169,7 @@
 (def dc (uris "http://purl.org/dc/elements/1.1/" :title :description))
 
 
-(def bind (uris "http://logangilmour.com/data-binder#" :js :debug :index :root :application :subject :object :children :container :from :path :view :base :param :name :binding :compiled))
+(def bind (uris "http://logangilmour.com/data-binder#" :js :debug :index :root :application :subject :object :children :template :from :path :view :base :param :name :binding :compiled))
 
 
 
@@ -204,17 +203,14 @@
 @prefix pl: <http://logangilmour.com/bootstrap-widgets/plain-list#> .
 @prefix tm: <http://logangilmour.com/bootstrap-widgets/type-manager#> .
 
-:component :param dc:title .
-dc:title :name \"title\".
+:component :param w:label .
+w:label :name \"label\".
 
 
 :component :param :debug .
 :debug :name \"debug\" .
 
-:component :param dc:description .
-dc:description :name \"description\" .
-
-:container :param w:id .
+:template :param w:id .
 w:id :name \"id\".
 
 :component :param :root .
@@ -237,7 +233,7 @@ w:id :name \"id\".
 
 :binding rdfs:subClassOf :component .
 
-:container rdfs:subClassOf :component .
+:template rdfs:subClassOf :component .
 
 :view rdfs:subClassOf :component .
 
@@ -245,42 +241,42 @@ w:id :name \"id\".
 
 
 w:projector
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(projector(this));\" .
 
 
 w:column8
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(column8(this));\" .
 
 w:column4
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(column4(this));\" .
 
 w:row
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(row(this));\" .
 
 w:list
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(list(this));\" .
 
 pl:list rdfs:subClassOf :view ;
-  :param pl:binding, dc:title, :root, :children;
+  :param pl:binding, w:label, :root, :children;
   :base [a w:list ;
          :root :root ;
-         dc:title dc:title;
+         w:label w:label;
          :children (pl:binding)] .
 
 pl:binding :children ([a w:li;
                        :children :children]).
 
-w:li rdfs:subClassOf :container ;
+w:li rdfs:subClassOf :template ;
   :js \"emit(li(this));\" .
 
 
 w:list-item-
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(listItem(this));\" .
 
 w:list-item rdfs:subClassOf :view ;
@@ -294,10 +290,10 @@ w:list-item rdfs:subClassOf :view ;
                   :children :children])] .
 
 w:link-list rdfs:subClassOf :view ;
-  :param :path, w:list-binding, dc:title, :children;
+  :param :path, w:list-binding, w:label, :children;
   :base
     [a w:list ;
-     dc:title dc:title ;
+     w:label w:label ;
      :children (w:list-binding)].
 
 w:list-binding :children (
@@ -307,7 +303,7 @@ w:list-binding :children (
 
 
 tm:type-manager rdfs:subClassOf :view ;
-:param tm:type, dc:title, tm:item , :path, :children;
+:param tm:type, w:label, tm:item , :path, :children;
 :base
   [a w:row ;
   :root tm:type ;
@@ -315,7 +311,7 @@ tm:type-manager rdfs:subClassOf :view ;
     [a w:column4 ;
      :children (
       [a w:link-list ;
-       dc:title dc:title ;
+       w:label w:label ;
        w:list-binding [:object rdf:type] ;
        :children (tm:item) ;
        :path :path]
@@ -336,15 +332,15 @@ cb:binding :from cb:path ;
   :children ([a w:value]) .
 
 w:deleter
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(deleter(this));\" .
 
 w:text
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(span(this));\" ;
   :param w:before , w:after.
 
-w:join-text rdfs:subClassOf :container ;
+w:join-text rdfs:subClassOf :template ;
   :js \"emit(join(this));\" ;
   :param w:join-with .
 
@@ -354,48 +350,48 @@ w:after :name \"after\".
 w:before :name \"before\".
 
 w:plain
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(this.vals);\" .
 
 w:checkbox
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(checkbox(this));\" .
 
 w:check
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(check(this));\" .
 
 w:value
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(value(this));\" .
 
 w:creator
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(creator(this));\" .
 
 w:paragraph
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(paragraph(this));\" .
 
 w:text-field
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(textField(this));\" .
 
 w:popup
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(popup(this));\".
 
 w:string
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(string(this));\".
 
 w:datepicker
-  rdfs:subClassOf :container ;
+  rdfs:subClassOf :template ;
   :js \"emit(datepicker(this));\".
 
 w:active-test
-  rdfs:subClassOf :container ;
-  :js \"if(this.vals==this.uri){emit('active')}else{emit('')};\" .
+  rdfs:subClassOf :template ;
+  :js \"if(this.children[0]==this.uri){emit('active')}else{emit('')};\" .
 
 w:active rdfs:subClassOf :view ;
   :param :from ;
@@ -565,7 +561,7 @@ w:active rdfs:subClassOf :view ;
         bindings (clojure.string/join
                   ", "
                   (map #(.getURI %)
-                       (filter #(not (contains? (types model %) (bind :container))) children)))
+                       (filter #(not (contains? (types model %) (bind :template))) children)))
 
         from (get context (bind :from))
 
@@ -584,7 +580,7 @@ w:active rdfs:subClassOf :view ;
         ]
 
     (cond
-     (contains? types (bind :container))
+     (contains? types (bind :template))
      (let [func (template (.getString
                            (reduce (fn [accum val]
                                      (or accum
@@ -738,7 +734,7 @@ w:active rdfs:subClassOf :view ;
          (map (fn [child] (qb child model uri)) children))]
 
     (cond
-     (contains? types (bind :container))
+     (contains? types (bind :template))
      subs
      :default
           (let [statement (get-bound binding model)
@@ -1012,7 +1008,7 @@ ex:foaf-manager rdfs:subClassOf :view ;
 :base
  [a pl:list;
     :root foaf:Person;
-    dc:title \"Butt\";
+    w:label \"Butt\";
     pl:binding [:object rdf:type];
     :children ([:subject foaf:givenName])].
 "))
@@ -1036,40 +1032,40 @@ ex:foaf-manager rdfs:subClassOf :view ;
 :base
  [a tm:type-manager;
   tm:type foaf:Person;
-  dc:title \"People\";
+  w:label \"People\";
   tm:item ex:fullName;
   :path \"person\";
   :children (
-   [dc:title \"Remove\";
+   [w:label \"Remove\";
      a w:deleter;
      :children ([:subject rdf:type])]
 
-   [dc:title \"Given Name\";
+   [w:label \"Given Name\";
      a w:text-field;
      :children ([:subject foaf:givenName])]
 
-    [dc:title \"Family Name\";
+    [w:label \"Family Name\";
      a w:text-field;
      :children ([:subject foaf:familyName])]
 
-    [dc:title \"Birthday\";
+    [w:label \"Birthday\";
      a w:datepicker;
      :children ([:subject foaf:birthday])]
 
-    [dc:title \"Status\";
+    [w:label \"Status\";
      a w:text-field;
      :children ([:subject foaf:status])]
 
     [a pl:list;
-     dc:title \"Knows\";
+     w:label \"Knows\";
      pl:binding [:subject foaf:knows];
      :children (ex:fullName)]
 
     [a w:popup;
-     dc:title \"Edit Known...\";
+     w:label \"Edit Known...\";
      :children
        ([a pl:list;
-        dc:title \"All\";
+        w:label \"All\";
         :root foaf:Person;
         pl:binding [:object rdf:type];
         :children (
