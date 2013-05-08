@@ -83,7 +83,7 @@ var creator = flat(Mustache.compile(
         + "data-binding='{{{binding}}}'>Create</a>"));
 
 var checkbox = Mustache.compile(
-"<input type='checkbox' class='checkbox-binding' data-uri='{{{uri}}}' data-binding='{{{binding}}}' value='{{{children.0}}}' {{#children.1}}checked='checked'{{/children.1}}>");
+"<input type='checkbox' class='checkbox-binding' data-uri='{{{uri}}}' data-binding='{{{binding}}}' value='{{{children.1}}}' {{#children.0}}checked='checked'{{/children.0}}>");
 
 var check = flat(Mustache.compile(
 "checked='checked'"));
