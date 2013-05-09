@@ -5,28 +5,16 @@
    aleph.http
    aleph.formats
    databinder.rdf
-   [clojure.tools.logging :only (spy)]
    [databinder.interpreter :only (interpreter)]
    [databinder.preprocessor :only (preprocess)]
    [databinder.synchronize :only (synchronize edit)]
-   [databinder.sparql.query :only (build-query)])
+   [databinder.sparql.query :only (build-query )])
   (:require
    [compojure.handler :as handler]
    [compojure.route :as route]
    [hiccup.core :as hic]
    [databinder.query :as q]
-
-   [clojure.walk :as w]
-   [clojure.java.io :as io]
-   [clojure.string :as s]
-   [databinder.template :as t]
-   [databinder.model :as m]
-   [databinder.context :as c]
-   [databinder.utils :as u]
-   )
-  (:import (com.hp.hpl.jena.rdf.model ModelFactory ResourceFactory Model SimpleSelector)
-           (com.hp.hpl.jena.query QuerySolutionMap ParameterizedSparqlString QueryExecutionFactory)
-           (com.hp.hpl.jena.update GraphStoreFactory UpdateExecutionFactory)))
+   [databinder.model :as m]))
 
 
 (def widgets (m/to-model
