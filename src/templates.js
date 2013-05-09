@@ -96,7 +96,7 @@ var paragraph = flat(Mustache.compile(
 
 var textField = flat(Mustache.compile(
 "<label>{{{label}}} <input type='text' class='text-field-binding' data-uri='{{{uri}}}'"
-+ "data-binding='{{{binding}}}' value='{{{children}}}'></label>"));
++ "data-binding='{{{binding}}}' value='{{children}}'></label>"));
 
 var popup = flat(Mustache.compile(
 "<a href='#modal{{{id}}}' data-target='#modal{{{id}}}' role='button' data-toggle='modal'>{{label}}</a>"
@@ -118,4 +118,4 @@ var string = Mustache.compile(
 "{{{label}}}");
 
 var datepicker = flat(Mustache.compile(
-"<label>{{label}} <input class='date-binding' data-provide='datepicker' data-date-format='dd-mm-yyyy' data-binding='{{{binding}}}' data-uri='{{{uri}}}' size='12' type='text' value='{{{children}}}'></label>"));
+"<label>{{label}} <input class='date-binding' data-provide='datepicker' data-date-format='dd-mm-yyyy' data-binding='{{{binding}}}' data-uri='{{{uri}}}' size='12' type='text' value='{{children}}'></label>"));
