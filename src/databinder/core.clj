@@ -133,7 +133,7 @@ w:list-binding :children (
 
 
 tm:type-manager rdfs:subClassOf :view ;
-:param tm:type, w:label, tm:item , :path, :children;
+:param tm:type, w:label, tm:item , :path, :children, :order-by;
 :base
   [a w:row ;
   :root tm:type ;
@@ -142,7 +142,7 @@ tm:type-manager rdfs:subClassOf :view ;
      :children (
       [a w:link-list ;
        w:label w:label ;
-       w:list-binding [:object rdf:type] ;
+       w:list-binding [:object rdf:type; :order-by :order-by] ;
        :children (tm:item) ;
        :path :path]
       [a w:creator ;
@@ -277,6 +277,7 @@ ex:foaf-manager rdfs:subClassOf :view ;
   w:label \"People\";
   tm:item ex:fullName;
   :path \"person\";
+  :order-by ([:subject foaf:familyName] [:subject foaf:givenName]);
   :children (
    [w:label \"Remove\";
      a w:deleter;

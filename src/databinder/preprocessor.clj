@@ -12,7 +12,11 @@
 
           children (doall
                     (filter (fn [child] (empty? (m/relate-right model (m/prop (bind :from)) child)))
-                     (get context (bind :children))))
+                            (get context (bind :children))))
+
+          order-by (doall
+                    (filter (fn [child] (empty? (m/relate-right model (m/prop (bind :from)) child)))
+                            (get context (bind :order-by))))
 
           path (get context (bind :path))
 
@@ -23,6 +27,8 @@
         (.add model
               (.createStatement model node (m/prop (bind :index)) (m/plit (str index))))
         (doseq [child children]
+          (url-index model child index))
+        (doseq [child order-by]
           (url-index model child index))
         (doseq [onlooker onlookers] ;;end end-children
           (url-index model onlooker (+ index 1)))))))
