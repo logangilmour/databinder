@@ -45,20 +45,13 @@
 
         local-context (if local-part (c/merge-context local-part local-context) local-context)
 
-        ann (c/debug (str  "thing: " parent-context) local-context)
+        types (conj (m/types model node) (bind :compiled))
 
         base (m/res (first (c/get-property model node (m/prop (bind :base)))))
 
-        types (conj (m/types model node) (bind :compiled))
-
         clone (m/res (m/uuid))
 
-
-
-        subbed (get parent-context (m/stringify node))
-
-        ;;fuck (m/debug (str "Hmm: " child-map "\n\n" new-end "\n\n") local-context)
-        ]
+        subbed (get parent-context (m/stringify node))]
 
 
     (cond
@@ -70,9 +63,9 @@
      (do
 
        (doseq [type types]
-           (.add model
-                 (.createStatement model clone (m/prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-                                   (m/res type))))
+         (.add model
+               (.createStatement model clone (m/prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+                                 (m/res type))))
        (c/copy-context model local-context clone)
 
        clone))))

@@ -7,13 +7,10 @@
    databinder.rdf
    [databinder.interpreter :only (interpreter)]
    [databinder.preprocessor :only (preprocess)]
-   [databinder.synchronize :only (synchronize edit)]
-   [databinder.sparql.query :only (build-query )])
+   [databinder.synchronize :only (synchronize edit)])
   (:require
-   [compojure.handler :as handler]
    [compojure.route :as route]
    [hiccup.core :as hic]
-   [databinder.query :as q]
    [databinder.model :as m]))
 
 
@@ -37,6 +34,7 @@
 :component :param :from .
 :component :param :index .
 :component :param :children .
+:component :param :types .
 
 :index :name \"index\" .
 
@@ -332,6 +330,7 @@ ex:fullName a w:join-text;
 (def expanded-example (atom nil))
 (def broadcast-channel (permanent-channel))
 (def renderer (atom nil))
+(def data nil)
 
 
 (defn page [body]
@@ -355,17 +354,13 @@ ex:fullName a w:join-text;
 
 (defn startup []
   (do
-    (print "starting up server!")
-    ;;(logger/init)
-    ))
-
-;;(def data-model (m/to-model data))
+    (print "starting up server!")))
 
 
 (def channels (atom {}))
 
 (defn register [ch url]
-  (siphon (map* (partial edit @expanded-example) (map* decode-json ch)) broadcast-channel)
+  (siphon (map* (partial edit @expanded-example data) (map* decode-json ch)) broadcast-channel)
   (swap! channels (fn [old]
 
                     (let [all (reduce (fn [accum key]
@@ -381,7 +376,7 @@ ex:fullName a w:join-text;
                                                 encode-json->string
                                                 (map*
                                                  (fn [message]
-                                                   (synchronize @expanded-example message url))
+                                                   (synchronize @expanded-example data message url))
                                                  broadcast-channel))
                                                new-ch)
                                        new-ch))]
@@ -402,7 +397,7 @@ ex:fullName a w:join-text;
 (defroutes main-routes
   (GET "/async/*" [] (wrap-aleph-handler chat-handler))
   (GET "/view/*" [*]
-       (page (@renderer (build-query @expanded-example *) (m/res "http://logangilmour.com/example-ontology#person") *))) ;;TODO WTF!!!! GET THIS OUT OF HERE!!!
+       (page (@renderer data *)))
   (route/resources "/")
   (route/not-found "Page not found"))
 
@@ -411,6 +406,7 @@ ex:fullName a w:join-text;
   [& args]
   (swap! expanded-example (fn [val] (preprocess example-view widgets)))
   (swap! renderer (fn [val] (interpreter @expanded-example)))
+  (def data (m/default-model))
   (start-http-server (wrap-ring-handler main-routes)
                      {:port 8080 :websocket true}))
 

@@ -2,10 +2,15 @@
   (:use
    databinder.rdf)
   (:require
-   [clojure.java.io :as io])
+   [clojure.java.io :as io]
+   [clojure.stacktrace :as st])
   (:import
    (com.hp.hpl.jena.rdf.model ModelFactory ResourceFactory Model SimpleSelector)
-   (java.io ByteArrayInputStream)))
+   (java.io ByteArrayInputStream)
+   (com.hp.hpl.jena.tdb TDBFactory)
+   (com.hp.hpl.jena.query ReadWrite)))
+
+(def ds nil)
 
 (defn prop [uri]
   (if uri
@@ -30,6 +35,13 @@
 (defn present? [model resource]
   (.containsResource model resource))
 
+(defn present-tx? [model resource]
+  (try
+    (.begin ds (. ReadWrite READ))
+    (.containsResource model resource)
+    (catch Exception e (.printStackTrace e))
+    (finally (.end ds))))
+
 (defn stringify [res]
   (if res
     (if (.isLiteral res)
@@ -38,12 +50,92 @@
 
 (defn relate-right
   [model predicate resource]
-  (iterator-seq (.listObjectsOfProperty model resource predicate)))
+  (doall (iterator-seq (.listObjectsOfProperty model resource predicate))))
+
+
 
 (defn relate-left [model predicate resource]
-  (iterator-seq (.listResourcesWithProperty model predicate resource)))
+  (doall (iterator-seq (.listResourcesWithProperty model predicate resource))))
+
+
 
 (defn uuid [] (str "urn:uuid:" (java.util.UUID/randomUUID)))
+
+(defn add
+  ([model subject predicate object]
+     (println "\n\nAHHH:" subject " " predicate " " object "\n\n")
+     (.begin ds (. ReadWrite WRITE))
+     (try
+       (.add model
+             (.createStatement model subject predicate object))
+       (.commit ds)
+       (catch Exception e (println "&&&&&&&&&&&\n\nBad create: " e)  )
+       (finally (.end ds)))
+      )
+  ([model triple]
+     (println "\n\nWOAH:" triple)
+     (.begin ds (. ReadWrite WRITE))
+     (try
+       (.add model
+             (.createStatement model (res (:s triple)) (prop (:p triple)) (res (:o triple))))
+       (.commit ds)
+       (catch Exception e (println "&&&&&&&&&&&\n\nBad create: " e) )
+       (finally (.end ds)))
+     ))
+
+(defn delete
+  ([model subject predicate object]
+     (println "\n\nAHHH:" subject " " predicate " " object "\n\n")
+     (.begin ds (. ReadWrite WRITE))
+     (try
+       (.remove model
+                (.createStatement model subject predicate object))
+       (.commit ds)
+          (catch Exception e (println "&&&&&&&&&&&\n\nBad delete: " e) )
+          (finally (.end ds))))
+  ([model triple]
+     (println "\n\nWOAH:" triple)
+     (.begin ds (. ReadWrite WRITE))
+     (try (.remove model
+                   (.createStatement model (res (:s triple)) (prop (:p triple)) (res (:o triple))))
+          (.commit ds)
+          (catch Exception e
+                 (println "&&&&&&&&&&&\n\nBad delete: " e) )
+          (finally (.end ds)))))
+
+(defn update-subject
+  ([model subject predicate object]
+
+     (let [old (first (relate-left model predicate object))]
+        (if old (delete model old predicate object))
+        (add model subject predicate object))
+     )
+  ([model triple]
+
+     (let [subject (plit (:s triple))
+           predicate (prop (:p triple))
+           object (res (:o triple))
+           old (first (relate-left model predicate object))]
+       (if old (delete model old predicate object))
+       (add model subject predicate object))
+     ))
+
+(defn update-object
+  ([model subject predicate object]
+
+     (let [old (first (relate-right model predicate subject))]
+        (if old (delete model subject predicate old))
+        (add model subject predicate object))
+     )
+  ([model triple]
+
+     (let [subject (res (:s triple))
+           predicate (prop (:p triple))
+           object (plit (:o triple))
+           old (first (relate-right model predicate subject))]
+       (if old (delete model subject predicate old))
+       (add model subject predicate object))
+     ))
 
 (defn rdf->seq [mod top]
   (seq (loop [model mod
@@ -94,6 +186,11 @@
     (.read model (new ByteArrayInputStream (.getBytes string-data "UTF-8")) "http://localhost:3000" "TURTLE")
     (skolemize-model model)
     model))
+
+(defn default-model []
+  (let [dataset (. TDBFactory createDataset "defaultdatabase")]
+    (def ds dataset)
+    (.getDefaultModel ds)))
 
 (defn types [model binding]
   (if (and binding (.isResource binding))
