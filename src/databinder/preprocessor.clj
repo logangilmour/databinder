@@ -34,12 +34,17 @@
 
         ;; children (doall (m/relate-right model (m/prop (bind :child)) node))
         children (get local-context (bind :children))
+        order-by (get local-context (bind :order-by))
 
         local-context
         (if (seq? children)
           (assoc local-context (bind :children) (doall (map #(generics model % parent-context nil) children)))
-          local-context
-          )
+          local-context)
+
+        local-context
+        (if (seq? order-by)
+          (assoc local-context (bind :order-by) (doall (map #(generics model % parent-context nil) order-by)))
+          local-context)
 
         local-context (c/resolve-context model parent-context local-context)
 

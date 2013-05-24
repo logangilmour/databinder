@@ -55,8 +55,7 @@
 (defn synchronize [expanded-view data command url]
 
   (let [predicate (m/res (:predicate command))
-        bindings (get-all-bindings (:model expanded-view) predicate)
-        views (map (partial interpreter expanded-view) bindings)]
+        bindings (get-all-bindings (:model expanded-view) predicate)]
 
     (map (fn [binding]
 
@@ -70,7 +69,7 @@
                  (assoc command
                    :uri (:value command)
                    :value
-                   ((interpreter expanded-view binding)
+                   (interpreter expanded-view binding
                     data
                     (m/res (:uri command))
                     (if (= (:type command) "update")
@@ -81,7 +80,7 @@
                    (.toString binding))
                  (assoc command
                    :value
-                   ((interpreter expanded-view binding)
+                   (interpreter expanded-view binding
                     data
                     (if (= (:type command) "update")
                       (m/plit (:value command))

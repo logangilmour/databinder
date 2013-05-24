@@ -52,7 +52,7 @@
 :children rdfs:domain :component .
 :children rdfs:range rdfs:List .
 
-:binding :param :bind .
+:binding :param :bind, :order-by .
 
 :binding rdfs:subClassOf :component .
 
@@ -329,7 +329,6 @@ ex:fullName a w:join-text;
 
 (def expanded-example (atom nil))
 (def broadcast-channel (permanent-channel))
-(def renderer (atom nil))
 (def data nil)
 
 
@@ -397,7 +396,7 @@ ex:fullName a w:join-text;
 (defroutes main-routes
   (GET "/async/*" [] (wrap-aleph-handler chat-handler))
   (GET "/view/*" [*]
-       (page (@renderer data *)))
+       (page (interpreter @expanded-example data *)))
   (route/resources "/")
   (route/not-found "Page not found"))
 
@@ -405,7 +404,6 @@ ex:fullName a w:join-text;
 (defn -main
   [& args]
   (swap! expanded-example (fn [val] (preprocess example-view widgets)))
-  (swap! renderer (fn [val] (interpreter @expanded-example)))
   (def data (m/default-model))
   (start-http-server (wrap-ring-handler main-routes)
                      {:port 8080 :websocket true}))
