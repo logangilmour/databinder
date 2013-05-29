@@ -18,6 +18,8 @@
                     (filter (fn [child] (empty? (m/relate-right model (m/prop (bind :from)) child)))
                             (get context (bind :order-by))))
 
+          filter (get context (bind :filter))
+
           path (get context (bind :path))
 
           onlookers (if path (doall (m/relate-left model (m/prop (bind :from)) path)) [])
@@ -26,6 +28,8 @@
       (do
         (.add model
               (.createStatement model node (m/prop (bind :index)) (m/plit (str index))))
+        (if (empty? (m/relate-right model (m/prop (bind :from)) filter))
+          (url-index model filter index))
         (doseq [child children]
           (url-index model child index))
         (doseq [child order-by]
@@ -42,6 +46,8 @@
         children (get local-context (bind :children))
         order-by (get local-context (bind :order-by))
 
+        filter (get local-context (bind :filter))
+
         local-context
         (if (seq? children)
           (assoc local-context (bind :children) (doall (map #(generics model % parent-context nil) children)))
@@ -50,6 +56,11 @@
         local-context
         (if (seq? order-by)
           (assoc local-context (bind :order-by) (doall (map #(generics model % parent-context nil) order-by)))
+          local-context)
+
+        local-context
+        (if filter
+          (assoc local-context (bind :filter) (generics model filter parent-context nil))
           local-context)
 
         local-context (c/resolve-context model parent-context local-context)
@@ -82,7 +93,7 @@
        clone))))
 
 (defn preprocess [view widgets]
-  (let [model (m/union view widgets)
+  (let [model (m/rdfs-model (m/union view widgets))
         root (generics model (m/res (bind :application)) {} nil)]
     (url-index model root 0)
     {:root root :model model}))

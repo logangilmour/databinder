@@ -29,8 +29,8 @@
 
   nil)
 
-(defn union [a b]
-  (. ModelFactory createRDFSModel (.union a b)))
+(defn rdfs-model [model]
+  (. ModelFactory createRDFSModel model))
 
 (defn present? [model resource]
   (.containsResource model resource))
@@ -188,6 +188,9 @@
     model))
 
 (defn default-model []
+  (if ds
+    (.close ds))
+  (. TDBFactory reset)
   (let [dataset (. TDBFactory createDataset "defaultdatabase")]
     (def ds dataset)
     (.getDefaultModel ds)))
@@ -197,6 +200,9 @@
     (set (map #(.toString %)
               (relate-right model (prop "http://www.w3.org/1999/02/22-rdf-syntax-ns#type") binding)))
     (set [])))
+
+(defn union [model-a model-b]
+  (. ModelFactory createUnion model-a model-b))
 
 (defn blank? [node]
   (and (.isResource node) (not (.getURI node))))

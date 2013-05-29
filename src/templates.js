@@ -45,8 +45,10 @@ var projector = flat(Mustache.compile(
 + "data-uri='{{{uri}}}'  "
 + "data-binding='{{{binding}}}'>{{#untitled}}{{{children}}}{{/untitled}}</a>" ));
 
+var div = flat(Mustache.compile(
+"<div data-binding='{{{binding}}} data-uri='{{{uri}}}' class='{{{classes}}}'>{{{children}}}</div>"));
 
-var listItem = Mustache.compile(
+var navItem = Mustache.compile(
 "<li class='{{{children.0}}}' data-uri='{{{uri}}}' data-binding='{{{binding}}}'>"
 + "{{{children.1}}}</li>");
 
@@ -64,7 +66,7 @@ var row = flat(Mustache.compile(
 "<div class='row'>{{{children}}}</div>"));
 
 var list = flat(Mustache.compile(
-"{{label}}:<ul class='list-binding nav nav-list {{classes}}' data-uri='{{{uri}}}' data-binding='{{{binding}}}'>"
+"<ul class='list-binding {{classes}}' data-uri='{{{uri}}}' data-binding='{{{binding}}}'>"
 + "{{{children}}}</ul>"));
 
 var span = flat(Mustache.compile(

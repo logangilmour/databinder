@@ -24,6 +24,8 @@
 @prefix cb: <http://logangilmour.com/bootstrap-widgets/compare-box#> .
 @prefix pl: <http://logangilmour.com/bootstrap-widgets/plain-list#> .
 @prefix tm: <http://logangilmour.com/bootstrap-widgets/type-manager#> .
+@prefix n: <http://logangilmour.com/bootstrap-widgets/nav-bar#> .
+@prefix f: <http://logangilmour.com/filter#> .
 
 
 :component :param :debug .
@@ -35,6 +37,7 @@
 :component :param :index .
 :component :param :children .
 :component :param :types .
+:template :param :filter .
 
 :index :name \"index\" .
 
@@ -69,6 +72,7 @@ w:label :name \"label\".
 :template :param w:id .
 w:id :name \"id\".
 
+:template :param w:classes .
 
 w:projector
   rdfs:subClassOf :template ;
@@ -88,8 +92,11 @@ w:row
   :js \"emit(row(this));\" .
 
 w:list
+  :param w:classes ;
   rdfs:subClassOf :template ;
   :js \"emit(list(this));\" .
+
+w:classes :name \"classes\" .
 
 pl:list rdfs:subClassOf :view ;
   :param pl:binding, w:label, :root, :children;
@@ -105,13 +112,13 @@ w:li rdfs:subClassOf :template ;
   :js \"emit(li(this));\" .
 
 
-w:list-item-
+w:nav-item-
   rdfs:subClassOf :template ;
-  :js \"emit(listItem(this));\" .
+  :js \"emit(navItem(this));\" .
 
-w:list-item rdfs:subClassOf :view ;
+w:nav-item rdfs:subClassOf :view ;
   :param :path, :children ;
-  :base [a w:list-item- ;
+  :base [a w:nav-item- ;
          :path :path;
          :children (
                  [a w:active ;
@@ -120,23 +127,61 @@ w:list-item rdfs:subClassOf :view ;
                   :children :children])] .
 
 w:link-list rdfs:subClassOf :view ;
-  :param :path, w:list-binding, w:label, :children;
+  :param :path, w:list-binding, w:label, :children ;
+  :base
+    [a w:nav-list;
+     :path :path;
+     w:list-binding w:list-binding;
+     w:label w:label;
+     w:classes \"nav nav-list\" ;
+     :children :children].
+
+w:nav-list rdfs:subClassOf :view ;
+  :param :path, w:list-binding, w:label, :children, w:classes;
   :base
     [a w:list ;
      w:label w:label ;
+     w:classes w:classes;
      :children (w:list-binding)].
 
 w:list-binding :children (
-  [a w:list-item;
+  [a w:nav-item;
    :path :path;
    :children :children]) .
 
 
+w:div rdfs:subClassOf :template ;
+  :js \"emit(div(this));\" .
+
+n:nav-bar rdfs:subClassOf :view ;
+  :param n:tab-binding, n:tab, :path;
+  :base
+    [a w:div;
+     w:classes \"navbar\" ;
+     :children
+     ([a w:div;
+       w:classes \"navbar-inner\" ;
+       :children
+        ([a w:nav-list;
+          :path :path;
+          w:list-binding n:tab-binding ;
+          :children (n:tab) ;
+          w:classes \"nav\"])])].
+
+n:pane rdfs:subClassOf :view ;
+  :param n:resource, :from, :children;
+  :base
+    [a w:div;
+    :from :from;
+     :filter [a f:equals; f:val n:resource];
+     w:classes \"container\";
+     :children :children].
+
 tm:type-manager rdfs:subClassOf :view ;
-:param tm:type, w:label, tm:item , :path, :children, :order-by;
+:param :root, w:label, tm:item , :path, :children, :order-by;
 :base
   [a w:row ;
-  :root tm:type ;
+  :root :root ;
   :children (
     [a w:column4 ;
      :children (
@@ -181,7 +226,7 @@ w:before :name \"before\".
 
 w:plain
   rdfs:subClassOf :template ;
-  :js \"emit(this.vals);\" .
+  :js \"emit(joinString(this.children,''));\" .
 
 w:checkbox
   rdfs:subClassOf :template ;
@@ -227,6 +272,14 @@ w:active rdfs:subClassOf :view ;
   :param :from ;
   :base [a w:active-test ;
          :children ([a w:value ; :from :from]) ] .
+
+
+f:val :name \"val\".
+
+f:equals rdfs:subClassOf :template;
+  :param f:val ;
+  :js \"if(this.children[0]==this.val){emit('true')}else{emit('')};\" .
+
 "
 
              ))
@@ -267,13 +320,32 @@ ex:foaf-manager rdfs:subClassOf :view ;
 @prefix cb: <http://logangilmour.com/bootstrap-widgets/compare-box#>.
 @prefix pl: <http://logangilmour.com/bootstrap-widgets/plain-list#>.
 @prefix tm: <http://logangilmour.com/bootstrap-widgets/type-manager#>.
+@prefix n: <http://logangilmour.com/bootstrap-widgets/nav-bar#> .
+@prefix f: <http://logangilmour.com/filter#> .
 
 :application a ex:foaf-manager.
 
+ex:base ex:hastab foaf:Person .
+
+foaf:Person ex:label \"People\" .
+
 ex:foaf-manager rdfs:subClassOf :view ;
-:base
- [a tm:type-manager;
-  tm:type foaf:Person;
+:base [a w:plain;
+       :root ex:base;
+       :children
+      ( [a n:nav-bar;
+         n:tab-binding [:subject ex:hastab] ;
+         n:tab [:subject ex:label] ;
+         :path \"hamburger\" ]
+
+
+         [a n:pane;
+          n:resource foaf:Person;
+          :from \"hamburger\";
+          :children (ex:types)])].
+
+
+ex:types a tm:type-manager;
   w:label \"People\";
   tm:item ex:fullName;
   :path \"person\";
@@ -315,7 +387,7 @@ ex:foaf-manager rdfs:subClassOf :view ;
           ex:fullName
           [a cb:relator;
            cb:binding [:object foaf:knows];
-           cb:path \"person\"] ) ] ) ] ) ].
+           cb:path \"person\"] ) ] ) ] ).
 
 ex:fullName a w:join-text;
   w:join-with \" \";
@@ -328,7 +400,7 @@ ex:fullName a w:join-text;
 "))
 
 
-(def expanded-example (atom nil))
+(def expanded-example nil)
 (def broadcast-channel (permanent-channel))
 (def data nil)
 
@@ -360,7 +432,7 @@ ex:fullName a w:join-text;
 (def channels (atom {}))
 
 (defn register [ch url]
-  (siphon (map* (partial edit @expanded-example data) (map* decode-json ch)) broadcast-channel)
+  (siphon (map* (partial edit expanded-example data) (map* decode-json ch)) broadcast-channel)
   (swap! channels (fn [old]
 
                     (let [all (reduce (fn [accum key]
@@ -376,7 +448,7 @@ ex:fullName a w:join-text;
                                                 encode-json->string
                                                 (map*
                                                  (fn [message]
-                                                   (synchronize @expanded-example data message url))
+                                                   (synchronize expanded-example data message url))
                                                  broadcast-channel))
                                                new-ch)
                                        new-ch))]
@@ -387,7 +459,7 @@ ex:fullName a w:join-text;
 (defn chat-handler [ch handshake]
   (receive ch
            (fn [input]
-             (let [url (:* (:params handshake))]
+             (let [url (clojure.string/replace (:uri handshake) #"^/async/" "/view/")]
                (println "registering a connection to url " url)
                ;;(let jc [(map* decode-json ch)])
                (register ch url))
@@ -396,16 +468,20 @@ ex:fullName a w:join-text;
 
 (defroutes main-routes
   (GET "/async/*" [] (wrap-aleph-handler chat-handler))
-  (GET "/view/*" [*]
-       (page (interpreter @expanded-example data *)))
+  (GET "/view/*" [* :as request]
+       (let [uri ;;(clojure.string/replace (:uri request) #"^/view/" "")
+             (:uri request)
+             ]
+         (println "URL!!!!!!! " uri)
+         (page (interpreter expanded-example data uri))))
   (route/resources "/")
   (route/not-found "Page not found"))
 
 
 (defn -main
   [& args]
-  (swap! expanded-example (fn [val] (preprocess example-view widgets)))
-  (def data (m/default-model))
+  (def expanded-example (preprocess example-view widgets))
+  (def data (m/union (m/default-model) (:model expanded-example)))
   (start-http-server (wrap-ring-handler main-routes)
                      {:port 8080 :websocket true}))
 
