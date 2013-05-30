@@ -11,6 +11,7 @@
                  [org.apache.jena/apache-jena "2.10.0" :extension "pom"]
                  [compojure "1.1.5"]
                  [hiccup "1.0.2"]
+                 [com.cemerick/url "0.0.7"]
                  [edu.ucdenver.ccp/kr-jena-core "1.4.5"]
                  [org.clojure/tools.logging "0.2.6"]
                  [log4j/log4j "1.2.16" :exclusions [javax.mail/mail

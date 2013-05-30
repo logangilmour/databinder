@@ -7,4 +7,4 @@
 
 (def dc (uris "http://purl.org/dc/elements/1.1/" :title :description))
 
-(def bind (uris "http://logangilmour.com/data-binder#" :js :debug :index :root :application :subject :object :children :template :from :filter :path :view :base :param :name :binding :bind :order-by :object-binding :subject-binding :compiled))
+(def bind (uris "http://logangilmour.com/data-binder#" :js :debug :index :root :application :subject :object :children :template :from :filter :query :key :path :view :base :param :name :binding :bind :order-by :object-binding :subject-binding :compiled))

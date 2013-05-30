@@ -63,6 +63,7 @@
 
 :view rdfs:subClassOf :component .
 
+:key rdfs:domain :query .
 
 
 :component :param w:label .
@@ -459,7 +460,8 @@ ex:fullName a w:join-text;
 (defn chat-handler [ch handshake]
   (receive ch
            (fn [input]
-             (let [url (clojure.string/replace (:uri handshake) #"^/async/" "/view/")]
+             (let [url (str (clojure.string/replace (:uri handshake) #"^/async/" "/view/")
+                            "?" (:query-string handshake))]
                (println "registering a connection to url " url)
                ;;(let jc [(map* decode-json ch)])
                (register ch url))
@@ -470,7 +472,7 @@ ex:fullName a w:join-text;
   (GET "/async/*" [] (wrap-aleph-handler chat-handler))
   (GET "/view/*" [* :as request]
        (let [uri ;;(clojure.string/replace (:uri request) #"^/view/" "")
-             (:uri request)
+             (str (:uri request) "?" (:query-string request))
              ]
          (println "URL!!!!!!! " uri)
          (page (interpreter expanded-example data uri))))

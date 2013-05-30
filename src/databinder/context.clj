@@ -47,6 +47,20 @@
                   (resolve-property model parent-context property))))
             (keys context)))
 
+(defn resolve-param [model property query]
+  (if (contains? (m/types model property) (bind :query))
+    (m/plit (or (get query (m/stringify (first (m/relate-right model (m/prop (bind :key)) property)))) ""))
+    property))
+
+(defn resolve-query [model context query]
+  (u/make-map identity
+              (fn [key]
+                (let [property (get context key)]
+                  (if (seq? property)
+                    property
+                    (resolve-param model property query))))
+              (keys context)))
+
 (defn copy-context [model local-context node]
   (doseq [param (keys local-context)]
     (let [property (get local-context param)]

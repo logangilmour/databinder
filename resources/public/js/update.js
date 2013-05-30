@@ -52,7 +52,8 @@ function process(type,uri,binding,value){
 
 function setup(){
      var path = window.location.pathname.replace(/^\/view\//,"");
-     var ws = new WebSocket("ws://localhost:8080/async/"+path);
+
+     var ws = new WebSocket("ws://localhost:8080/async/"+path+window.location.search);
         ws.onmessage = function(evt) {
             console.log(evt.data);
             _.map(JSON.parse(evt.data),
