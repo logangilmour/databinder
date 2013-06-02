@@ -26,21 +26,14 @@
 @prefix tm: <http://logangilmour.com/bootstrap-widgets/type-manager#> .
 @prefix n: <http://logangilmour.com/bootstrap-widgets/nav-bar#> .
 @prefix f: <http://logangilmour.com/filter#> .
+@prefix u: <http://logangilmour.com/uri#> .
 
 
 :component :param :debug .
 :debug :name \"debug\" .
 
-:component :param :root .
-:component :param :path .
-:component :param :from .
-:component :param :index .
-:component :param :children .
-:component :param :types .
-:template :param :filter .
-
-:index :name \"index\" .
-
+:component :param :root, :children, :types .
+:template :param :uri, :filter .
 
 :bind rdfs:domain :binding .
 :object rdfs:domain :object-binding .
@@ -65,6 +58,7 @@
 
 :key rdfs:domain :query .
 
+:index rdfs:domain :path .
 
 :component :param w:label .
 w:label :name \"label\".
@@ -118,27 +112,28 @@ w:nav-item-
   :js \"emit(navItem(this));\" .
 
 w:nav-item rdfs:subClassOf :view ;
-  :param :path, :children ;
+  :param w:url, :children ;
   :base [a w:nav-item- ;
-         :path :path;
          :children (
                  [a w:active ;
-                  :from :path]
+                  w:url w:url]
                  [a w:projector;
+:debug \"true\";
+                  :uri [u:update w:url];
                   :children :children])] .
 
 w:link-list rdfs:subClassOf :view ;
-  :param :path, w:list-binding, w:label, :children ;
+  :param w:url, w:list-binding, w:label, :children ;
   :base
     [a w:nav-list;
-     :path :path;
+     w:url w:url;
      w:list-binding w:list-binding;
      w:label w:label;
      w:classes \"nav nav-list\" ;
      :children :children].
 
 w:nav-list rdfs:subClassOf :view ;
-  :param :path, w:list-binding, w:label, :children, w:classes;
+  :param w:url, w:list-binding, w:label, :children, w:classes;
   :base
     [a w:list ;
      w:label w:label ;
@@ -147,7 +142,7 @@ w:nav-list rdfs:subClassOf :view ;
 
 w:list-binding :children (
   [a w:nav-item;
-   :path :path;
+   w:url w:url;
    :children :children]) .
 
 
@@ -155,7 +150,7 @@ w:div rdfs:subClassOf :template ;
   :js \"emit(div(this));\" .
 
 n:nav-bar rdfs:subClassOf :view ;
-  :param n:tab-binding, n:tab, :path;
+  :param n:tab-binding, n:tab, w:url;
   :base
     [a w:div;
      w:classes \"navbar\" ;
@@ -164,22 +159,22 @@ n:nav-bar rdfs:subClassOf :view ;
        w:classes \"navbar-inner\" ;
        :children
         ([a w:nav-list;
-          :path :path;
+          w:url w:url;
           w:list-binding n:tab-binding ;
           :children (n:tab) ;
           w:classes \"nav\"])])].
 
 n:pane rdfs:subClassOf :view ;
-  :param n:resource, :from, :children;
+  :param n:resource, w:url, :children;
   :base
     [a w:div;
-    :from :from;
-     :filter [a f:equals; f:val n:resource];
+    :root w:url;
+     #:filter [a f:equals; f:val n:resource];
      w:classes \"container\";
      :children :children].
 
 tm:type-manager rdfs:subClassOf :view ;
-:param :root, w:label, tm:item , :path, :children, :order-by;
+:param :root, w:label, tm:item , w:url, :children, :order-by;
 :base
   [a w:row ;
   :root :root ;
@@ -190,21 +185,21 @@ tm:type-manager rdfs:subClassOf :view ;
        w:label w:label ;
        w:list-binding [:object rdf:type; :order-by :order-by] ;
        :children (tm:item) ;
-       :path :path]
+       w:url w:url]
       [a w:creator ;
        :children ([:object rdf:type])])]
     [a w:column4;
-     :from :path;
+     :root w:url;
      :children :children])].
 
 
 cb:relator rdfs:subClassOf :view ;
-  :param cb:binding , cb:path ;
+  :param cb:binding , w:url ;
   :base [a w:checkbox ;
          :children (cb:binding
-                [a w:value ; :from cb:path])] .
+                [a w:value ; :root w:url])] .
 
-cb:binding :from cb:path ;
+cb:binding :root w:url ;
   :children ([a w:value]) .
 
 w:deleter
@@ -269,10 +264,11 @@ w:active-test
   rdfs:subClassOf :template ;
   :js \"if(this.children[0]==this.uri){emit('active')}else{emit('')};\" .
 
+
 w:active rdfs:subClassOf :view ;
-  :param :from ;
+  :param w:url ;
   :base [a w:active-test ;
-         :children ([a w:value ; :from :from]) ] .
+         :children ([a w:value ; :root w:url]) ] .
 
 
 f:val :name \"val\".
@@ -280,6 +276,14 @@ f:val :name \"val\".
 f:equals rdfs:subClassOf :template;
   :param f:val ;
   :js \"if(this.children[0]==this.val){emit('true')}else{emit('')};\" .
+
+u:updater rdfs:subClassOf :template;
+  :param u:update ;
+  :js \"emit(this.update);\" .
+
+u:update :name \"update\" .
+
+u:update rdfs:domain u:updater .
 
 "
 
@@ -302,7 +306,7 @@ f:equals rdfs:subClassOf :template;
 ex:foaf-manager rdfs:subClassOf :view ;
 :base
  [a pl:list;
-    :root foaf:Person;
+    :root [:index 1];
     w:label \"Butt\";
     pl:binding [:object rdf:type];
     :children ([:subject foaf:givenName])].
@@ -337,19 +341,18 @@ ex:foaf-manager rdfs:subClassOf :view ;
       ( [a n:nav-bar;
          n:tab-binding [:subject ex:hastab] ;
          n:tab [:subject ex:label] ;
-         :path \"hamburger\" ]
-
+         w:url [:index 1]]
 
          [a n:pane;
           n:resource foaf:Person;
-          :from \"hamburger\";
+          w:url [:index 1];
           :children (ex:types)])].
 
 
 ex:types a tm:type-manager;
   w:label \"People\";
   tm:item ex:fullName;
-  :path \"person\";
+  w:url [:index 2];
   :order-by ([:subject foaf:familyName] [:subject foaf:givenName]);
   :children (
    [w:label \"Remove\";
@@ -388,7 +391,7 @@ ex:types a tm:type-manager;
           ex:fullName
           [a cb:relator;
            cb:binding [:object foaf:knows];
-           cb:path \"person\"] ) ] ) ] ).
+           w:url [:index 2]] ) ] ) ] ).
 
 ex:fullName a w:join-text;
   w:join-with \" \";

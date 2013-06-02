@@ -148,7 +148,7 @@
                   (conj list
                         (first (relate-right model (prop (rdfs :first)) head))))))))
 
-(defn seq->rdf [model coll]
+ (defn seq->rdf [model coll]
   (if (empty? coll)
     (res (rdfs :nil))
     (let [current (res (uuid))]

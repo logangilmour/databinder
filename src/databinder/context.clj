@@ -3,7 +3,9 @@
    databinder.rdf)
   (:require
    [databinder.model :as m]
-   [databinder.utils :as u]))
+   [databinder.utils :as u])
+  (:import
+   [java.net URLEncoder URLDecoder]))
 
 (defn get-property [model resource property]
   (filter identity (map #(if % (.getURI %))
@@ -43,22 +45,37 @@
             (fn [key]
               (let [property (get context key)]
                 (if (seq? property)
-                  property
+                  (map (partial resolve-property model parent-context) property)
                   (resolve-property model parent-context property))))
             (keys context)))
 
-(defn resolve-param [model property query]
-  (if (contains? (m/types model property) (bind :query))
-    (m/plit (or (get query (m/stringify (first (m/relate-right model (m/prop (bind :key)) property)))) ""))
-    property))
+(defn resolve-param [model property url]
+  (let [query (:query-params (u/parse-url url))
+        val (get query (m/stringify (first (m/relate-right model (m/prop (bind :key)) property))))]
+    (if val (m/plit (URLDecoder/decode val)))))
 
-(defn resolve-query [model context query]
+(defn resolve-path [model property url]
+  (let [path (:path-vec (u/parse-url url))
+        index (m/stringify (first (m/relate-right model (m/prop (bind :index)) property)))
+        val (get path
+                 (try (Integer/parseInt index)
+                      (catch NumberFormatException e 0)))]
+    (if val (m/res (URLDecoder/decode val)))))
+
+(defn resolve-url [model context url]
   (u/make-map identity
               (fn [key]
                 (let [property (get context key)]
                   (if (seq? property)
                     property
-                    (resolve-param model property query))))
+                    (cond (contains? (m/types model property) (bind :query))
+                          (resolve-param model property url)
+
+                          (contains? (m/types model property) (bind :path))
+                          (resolve-path model property url)
+
+                          :default
+                          property))))
               (keys context)))
 
 (defn copy-context [model local-context node]
@@ -67,7 +84,6 @@
       (if property
         (.add model (.createStatement model node (m/prop param)
                                       (if (seq? property)
-
                                         (m/seq->rdf model property)
                                         property)))))))
 

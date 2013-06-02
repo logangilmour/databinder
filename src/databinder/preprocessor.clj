@@ -4,68 +4,40 @@
   (:require
    [databinder.model :as m]
    [databinder.context :as c]
+   [databinder.utils :as u]
    ))
 
-(defn url-index [model node index] ;;end end-children
-  (if (contains? (m/types model node) (bind :compiled))
-    (let [context (c/build-context model node)
-
-          children (doall
-                    (filter (fn [child] (empty? (m/relate-right model (m/prop (bind :from)) child)))
-                            (get context (bind :children))))
-
-          order-by (doall
-                    (filter (fn [child] (empty? (m/relate-right model (m/prop (bind :from)) child)))
-                            (get context (bind :order-by))))
-
-          filter (get context (bind :filter))
-
-          path (get context (bind :path))
-
-          onlookers (if path (doall (m/relate-left model (m/prop (bind :from)) path)) [])
-
-          observer (get context (bind :from))]
-      (do
-        (.add model
-              (.createStatement model node (m/prop (bind :index)) (m/plit (str index))))
-        (if (empty? (m/relate-right model (m/prop (bind :from)) filter))
-          (url-index model filter index))
-        (doseq [child children]
-          (url-index model child index))
-        (doseq [child order-by]
-          (url-index model child index))
-        (doseq [onlooker onlookers] ;;end end-children
-          (url-index model onlooker (+ index 1)))))))
+(defn expand [model expander resource]
+  (if (seq? resource)
+    (doall (map (partial expand model expander) resource))
+    (if resource
+      (let [types (m/types model resource)]
+        (if (contains? types (bind :component))
+          (expander resource)
+          resource)))))
 
 (defn generics [model node parent-context local-part] ;;end end-children
   (let [local-context (c/build-context model node)
 
-        ;;thing (println "\n\n1: " parent-context "\n\n2: " local-context)
 
-        ;; children (doall (m/relate-right model (m/prop (bind :child)) node))
-        children (get local-context (bind :children))
-        order-by (get local-context (bind :order-by))
-
-        filter (get local-context (bind :filter))
+        a (if (first (m/relate-right model (m/prop (bind :debug)) node))
+            (println "Before: " local-context
+                     "\n\nParent: " parent-context))
 
         local-context
-        (if (seq? children)
-          (assoc local-context (bind :children) (doall (map #(generics model % parent-context nil) children)))
-          local-context)
+        (u/make-map first
+                    (comp (partial expand model #(generics model % parent-context nil)) second)
+                    local-context)
 
-        local-context
-        (if (seq? order-by)
-          (assoc local-context (bind :order-by) (doall (map #(generics model % parent-context nil) order-by)))
-          local-context)
 
-        local-context
-        (if filter
-          (assoc local-context (bind :filter) (generics model filter parent-context nil))
-          local-context)
 
         local-context (c/resolve-context model parent-context local-context)
 
         local-context (if local-part (c/merge-context local-part local-context) local-context)
+
+        b (if (first (m/relate-right model (m/prop (bind :debug)) node))
+            (println "After: " local-context
+                     "\n\nParent: " parent-context))
 
         types (conj (m/types model node) (bind :compiled))
 
@@ -95,5 +67,4 @@
 (defn preprocess [view widgets]
   (let [model (m/rdfs-model (m/union view widgets))
         root (generics model (m/res (bind :application)) {} nil)]
-    (url-index model root 0)
     {:root root :model model}))
