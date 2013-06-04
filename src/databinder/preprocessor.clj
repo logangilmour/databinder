@@ -19,25 +19,14 @@
 (defn generics [model node parent-context local-part] ;;end end-children
   (let [local-context (c/build-context model node)
 
-
-        a (if (first (m/relate-right model (m/prop (bind :debug)) node))
-            (println "Before: " local-context
-                     "\n\nParent: " parent-context))
-
         local-context
         (u/make-map first
                     (comp (partial expand model #(generics model % parent-context nil)) second)
                     local-context)
 
-
-
         local-context (c/resolve-context model parent-context local-context)
 
         local-context (if local-part (c/merge-context local-part local-context) local-context)
-
-        b (if (first (m/relate-right model (m/prop (bind :debug)) node))
-            (println "After: " local-context
-                     "\n\nParent: " parent-context))
 
         types (conj (m/types model node) (bind :compiled))
 

@@ -29,6 +29,8 @@
 @prefix u: <http://logangilmour.com/uri#> .
 
 
+:root :name \"root\" .
+
 :component :param :debug .
 :debug :name \"debug\" .
 
@@ -48,11 +50,35 @@
 :children rdfs:domain :component .
 :children rdfs:range rdfs:List .
 
+:children :name \"children\" .
+
 :binding :param :bind, :order-by .
 
 :binding rdfs:subClassOf :component .
 
 :template rdfs:subClassOf :component .
+
+:reader rdfs:subClassOf :template .
+
+:writer rdfs:subClassOf :template .
+
+u:reader rdfs:subClassOf :reader;
+  :js \"emit(decodeURIComponent(parseURL(url).path[parseInt(this.children[0].index)+1]));\" .
+
+u:writer rdfs:subClassOf :writer;
+  :js \"emit(writeIndex(this));\".
+
+u:writer rdfs:subClassOf :writer .
+
+u:index rdfs:domain u:data .
+
+u:index :name \"index\" .
+
+u:data rdfs:subClassOf :json ;
+  :param u:index .
+
+:json rdfs:subClassOf :template ;
+  :js \"emit(this)\" .
 
 :view rdfs:subClassOf :component .
 
@@ -119,7 +145,7 @@ w:nav-item rdfs:subClassOf :view ;
                   w:url w:url]
                  [a w:projector;
 :debug \"true\";
-                  :uri [u:update w:url];
+                  :uri [a u:writer; :children (w:url)];
                   :children :children])] .
 
 w:link-list rdfs:subClassOf :view ;
@@ -149,6 +175,18 @@ w:list-binding :children (
 w:div rdfs:subClassOf :template ;
   :js \"emit(div(this));\" .
 
+#n:tab-panel rdfs:subClassOf :view ;
+#  :param n:tab-set, n:tab ;
+#  :base
+#  [a w:plain;
+#     :root n:tab-panel;
+#     :children (
+#     [:subject n:children;
+#      :children (
+#        [a n:nav-bar; n:tab-binding n:has; n:tab n:tab; w:url w:url]
+#        [a w:div; w:classes \"container\"; :children n:children])])].
+
+
 n:nav-bar rdfs:subClassOf :view ;
   :param n:tab-binding, n:tab, w:url;
   :base
@@ -168,7 +206,7 @@ n:pane rdfs:subClassOf :view ;
   :param n:resource, w:url, :children;
   :base
     [a w:div;
-    :root w:url;
+    :root [a u:reader; :children (w:url)];
      #:filter [a f:equals; f:val n:resource];
      w:classes \"container\";
      :children :children].
@@ -189,7 +227,7 @@ tm:type-manager rdfs:subClassOf :view ;
       [a w:creator ;
        :children ([:object rdf:type])])]
     [a w:column4;
-     :root w:url;
+     :root [a u:reader; :children (w:url)];
      :children :children])].
 
 
@@ -197,9 +235,9 @@ cb:relator rdfs:subClassOf :view ;
   :param cb:binding , w:url ;
   :base [a w:checkbox ;
          :children (cb:binding
-                [a w:value ; :root w:url])] .
+                [a w:value ; :root [a u:reader; :children (w:url)]])] .
 
-cb:binding :root w:url ;
+cb:binding :root [a u:reader; :children (w:url)] ;
   :children ([a w:value]) .
 
 w:deleter
@@ -268,7 +306,7 @@ w:active-test
 w:active rdfs:subClassOf :view ;
   :param w:url ;
   :base [a w:active-test ;
-         :children ([a w:value ; :root w:url]) ] .
+         :children ([a w:value ; :root [a u:reader; :children (w:url)]]) ] .
 
 
 f:val :name \"val\".
@@ -285,11 +323,14 @@ u:update :name \"update\" .
 
 u:update rdfs:domain u:updater .
 
+w:tester rdfs:subClassOf :template;
+  :js \"emit(JSON.stringify(this));\".
+
 "
 
              ))
 
-(def example-view-small (m/to-model
+(def example-viewS (m/to-model
                    "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix : <http://logangilmour.com/data-binder#> .
@@ -299,17 +340,18 @@ u:update rdfs:domain u:updater .
 @prefix w: <http://logangilmour.com/bootstrap-widgets#> .
 @prefix pl: <http://logangilmour.com/bootstrap-widgets/plain-list#> .
 @prefix tm: <http://logangilmour.com/bootstrap-widgets/type-manager#> .
+@prefix u: <http://logangilmour.com/uri#> .
 
 
 :application a ex:foaf-manager .
 
 ex:foaf-manager rdfs:subClassOf :view ;
 :base
- [a pl:list;
-    :root [:index 1];
-    w:label \"Butt\";
-    pl:binding [:object rdf:type];
-    :children ([:subject foaf:givenName])].
+ [a w:tester;
+    :root ex:thing;
+    :children ([:object rdf:type])].
+
+ex:thing a u:reader; :children ([u:index 1]).
 "))
 
 
@@ -327,6 +369,7 @@ ex:foaf-manager rdfs:subClassOf :view ;
 @prefix tm: <http://logangilmour.com/bootstrap-widgets/type-manager#>.
 @prefix n: <http://logangilmour.com/bootstrap-widgets/nav-bar#> .
 @prefix f: <http://logangilmour.com/filter#> .
+@prefix u: <http://logangilmour.com/uri#> .
 
 :application a ex:foaf-manager.
 
@@ -338,21 +381,21 @@ ex:foaf-manager rdfs:subClassOf :view ;
 :base [a w:plain;
        :root ex:base;
        :children
-      ( [a n:nav-bar;
+      ([a n:nav-bar;
          n:tab-binding [:subject ex:hastab] ;
          n:tab [:subject ex:label] ;
-         w:url [:index 1]]
+         w:url [u:index 1]]
 
          [a n:pane;
           n:resource foaf:Person;
-          w:url [:index 1];
+          w:url [u:index 1];
           :children (ex:types)])].
 
 
 ex:types a tm:type-manager;
   w:label \"People\";
   tm:item ex:fullName;
-  w:url [:index 2];
+  w:url [u:index 2];
   :order-by ([:subject foaf:familyName] [:subject foaf:givenName]);
   :children (
    [w:label \"Remove\";
@@ -391,7 +434,7 @@ ex:types a tm:type-manager;
           ex:fullName
           [a cb:relator;
            cb:binding [:object foaf:knows];
-           w:url [:index 2]] ) ] ) ] ).
+           w:url [u:index 2]] ) ] ) ] ).
 
 ex:fullName a w:join-text;
   w:join-with \" \";

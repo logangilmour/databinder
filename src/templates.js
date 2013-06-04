@@ -24,6 +24,47 @@ function joinString(array, joinStr){
     return _.reduce(array, function(accum,val){ return accum+joinStr+val; }, "");
 }
 
+function parseURL(url){
+    var regex = /^(([^:\/?#]+):)?(\/\/([^\/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?/;
+    var match = regex.exec(url);
+    var path;
+    if (match[5]){
+        path = match[5].split("/");
+    }
+    return {scheme : match[1], authority : match[3], path : path , query : match[6], fragment : match[8]};
+};
+
+function stringURL(url){
+   var path = "";
+   if(url.path){
+       path=url.path.join("/");
+   }
+   return (url.scheme || "")+(url.authority || "")+path+(url.query||"")+(url.fragment||"");
+}
+
+function writeIndex(context){
+    var u = parseURL(context.url);
+    var i = parseInt(context.children[0].index)+1;
+    u.path[i]=encodeURIComponent(context.uri);
+    return stringURL(u);
+}
+
+function arrayEqual(a, b) {
+        var i = Math.max(a.length, b.length, 1);
+        while(i-- >= 0 && a[i] === b[i]);
+        return (i === -2);
+}
+
+function flatten(arr) {
+        var r = [];
+
+        while (!arrayEqual(r, arr)) {
+                r = arr;
+                arr = [].concat.apply([], arr);
+        }
+        return joinString(arr,"");
+}
+
 function flat(fn){
     return function(context){
         //context.first = context.children[0];
@@ -32,8 +73,8 @@ function flat(fn){
         //context.fourth = context.children[3];
         //context.fifth = context.children[4];
         //context.sixth = context.children[5];
-        context.children = joinString(context.children, "");
-        return fn(context);
+        context.children = flatten(context.children);
+            return fn(context);
     };
 };
 

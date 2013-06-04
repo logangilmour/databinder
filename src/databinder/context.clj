@@ -17,12 +17,12 @@
 
 (defn named-params [model context]
   (into {} (keep #(if (first %) %)
-                 (u/make-map #(m/stringify (first (m/relate-right model (m/prop (bind :name)) (m/res %))))
-                           #(let [property (get context %)]
+                 (u/make-map (fn [[key _]] (m/stringify (first (m/relate-right model (m/prop (bind :name)) (m/res key)))))
+                             (fn [[_ property]]
                               (if (seq? property)
-                                (doall (map (fn [p] (m/stringify p)) property))
+                                property
                                 (m/stringify property)))
-                           (keys context)))))
+                           context))))
 
 (defn resolve-property [model context resource]
   (if (contains? (set (keys context)) (m/stringify resource))
@@ -49,33 +49,15 @@
                   (resolve-property model parent-context property))))
             (keys context)))
 
-(defn resolve-param [model property url]
-  (let [query (:query-params (u/parse-url url))
-        val (get query (m/stringify (first (m/relate-right model (m/prop (bind :key)) property))))]
-    (if val (m/plit (URLDecoder/decode val)))))
-
-(defn resolve-path [model property url]
-  (let [path (:path-vec (u/parse-url url))
-        index (m/stringify (first (m/relate-right model (m/prop (bind :index)) property)))
-        val (get path
-                 (try (Integer/parseInt index)
-                      (catch NumberFormatException e 0)))]
-    (if val (m/res (URLDecoder/decode val)))))
-
-(defn resolve-url [model context url]
+(defn resolve-url [model context expander]
   (u/make-map identity
               (fn [key]
                 (let [property (get context key)]
                   (if (seq? property)
                     property
-                    (cond (contains? (m/types model property) (bind :query))
-                          (resolve-param model property url)
-
-                          (contains? (m/types model property) (bind :path))
-                          (resolve-path model property url)
-
-                          :default
-                          property))))
+                    (if (contains? (m/types model property) (bind :reader))
+                      (m/res (expander property))
+                      property))))
               (keys context)))
 
 (defn copy-context [model local-context node]

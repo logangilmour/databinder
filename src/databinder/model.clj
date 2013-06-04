@@ -5,7 +5,7 @@
    [clojure.java.io :as io]
    [clojure.stacktrace :as st])
   (:import
-   (com.hp.hpl.jena.rdf.model ModelFactory ResourceFactory Model SimpleSelector)
+   (com.hp.hpl.jena.rdf.model ModelFactory ResourceFactory Model SimpleSelector RDFNode)
    (java.io ByteArrayInputStream)
    (com.hp.hpl.jena.tdb TDBFactory)
    (com.hp.hpl.jena.query ReadWrite)))
@@ -43,10 +43,11 @@
     (finally (.end ds))))
 
 (defn stringify [res]
-  (if res
+  (if (instance? RDFNode res)
     (if (.isLiteral res)
       (.getString (.asLiteral res))
-      (.toString res))))
+      (.toString res))
+    res))
 
 (defn relate-right
   [model predicate resource]
