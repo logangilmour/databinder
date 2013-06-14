@@ -1,64 +1,96 @@
+markers = [];
 
-function process(type,uri,binding,value){
-    $("input.text-field-binding").each(function(i){
-        if($(this).data("uri")==uri &&
-           $(this).data("binding")==binding){
-            $(this).val(value);
-        }
-    });
-    $("input.checkbox-binding").each(function(i){
-        if($(this).data("uri")==uri &&
-           $(this).data("binding")==binding &&
-           $(this).val()==value){
-           //if(/checked='checked'/.test(value)){
-            if(type=="delete"){
-                $(this).prop("checked",false);
-            }else if(type=="create"){
-                $(this).prop("checked",true);
-            }
-        }
-    });
-    $("input.date-binding").each(function(i){
-        if($(this).data("uri")==uri &&
-           $(this).data("binding")==binding){
-          $(this).val(value);
-        }
-    });
-    $(".bound").each(function(i){
-        if($(this).data("uri")==uri &&
-           $(this).data("binding")==binding){
-            $(this).html(value);
-        }
-    });
-    $("a.projector-binding").each(function(i){
-        if($(this).data("uri")==uri &&
-           $(this).data("binding")==binding){
-            $(this).text(value);
-        }
-    });
-    $(".list-binding").each(function(i){
-        if($(this).data("uri")==uri &&
-           $(this).data("binding")==binding){
-            if(type=="delete"){
-                $(this).children("li[data-uri='"+value+"']").remove(); // make this global, then go back to minimal functions for everything!
-            } else if (type=="create"){
-                $(this).append($(value));
-            }
-        }
-    });
+
+binders = {
+    "input.text-field-binding, input.date-binding": function(){
+        var el = this;
+        addBound($(this).data("binding"),
+                 $(this).data("uri"),
+                 {"update": function(value){$(el).val(value);}});
+    },
+    "input.checkbox-binding": function(){
+        var el = this;
+        addBound($(this).data("binding"),
+                 $(this).data("uri"),
+                 {"create": function(value){ $(el).prop("checked",true);},
+                  "delete": function(value){$(el).prop("checked",false);}});
+    },
+    ".bound": function(){
+        var el = this;
+        addBound($(this).data("binding"),
+                 $(this).data("uri"),
+                 {"update":function(value){$(el).html(value);}});
+    },
+    "a.projector-binding": function(){
+        var el = this;
+        addBound($(this).data("binding"),
+                 $(this).data("uri"),
+                 {"update":function(value){$(el).text(value);}});
+    },
+    ".list-binding": function(){
+        var el = this;
+        addBound($(this).data("binding"),
+                 $(this).data("uri"),
+                 {"create":function(value){
+                     var child = $(value);
+                     $(el).append(child);
+                     _.map(binders,function(val,key){
+                         child.find(key).each(val);});
+                 },
+                 "delete":function(value){$(el).children("li[data-uri='"+value+"']").remove();}});
+    }};
+
+
+    //_.map(markers,function(marker){
+    //    if(marker.lat.uri==uri && marker.lat.binding==binding){
+    //        var latlng = marker.marker.getLatLng();
+    //        var lng = latlng.lng;
+    //        marker.marker.setLatLng([value,lng]);
+    //    }
+    //});
     //$("[data-binding='"+binding+"']").each(function(i){
     // TODO figure this out    if($(this).data("uri")==
+
+
+window.bindings = {};
+function addBound(binding, resource, fmap){
+    var resources = bindings[binding];
+    if (!resources) {
+        resources = {};
+        bindings[binding]=resources;
+    }
+
+    resources[resource] = fmap;
 }
 
+function getBound(binding, resource, type){
+    try{
+    return bindings[binding][resource][type];
+    }catch(e){return null;}
+}
+function deleteBound(binding, resource){
+    try{
+        bindings[binding][resource]=null;
+    }catch(e){
+    }
+}
 function setup(){
      var path = window.location.pathname.replace(/^\/view\//,"");
+    _.map(binders, function(val, key){
+        $(key).each(val);
+        });
 
-     var ws = new WebSocket("ws://localhost:8080/async/"+path+window.location.search);
+     window.ws = new WebSocket("ws://localhost:8080/async/"+path+window.location.search);
         ws.onmessage = function(evt) {
             console.log(evt.data);
             _.map(JSON.parse(evt.data),
                   function(message){
-                      process(message.type,message.uri,message.binding,message.value);
+                      //process(message.type,message.uri,message.binding,message.value);
+                      bound = getBound(message.binding, message.uri, message.type);
+                      if (bound){
+                          bound(message.value);
+                      }
+
                   });
         };
 
@@ -144,6 +176,66 @@ function setup(){
                                   data:el.data("value"),
                                   type:"delete"}));
                  });
+    leafMap();
+
+}
+
+function leafMap(){
+    $(".leaf-map").each(function(i,el){
+        var map = L.map(el, {
+            center: [51.505, -0.09],
+            zoom: 13
+        });
+        L.tileLayer('http://{s}.tile.cloudmade.com/0003702debcd4b348f8129a8ac9c163f/997/256/{z}/{x}/{y}.png', {
+            attribution: 'Map data &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, <a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, Imagery © <a href="http://cloudmade.com">CloudMade</a>',
+            maxZoom: 18
+        }).addTo(map);
+
+        var markers = $(el).data("markers");
+        //for (child in children) {
+        _.map(markers, function(child){
+        try{
+        var marker = L.marker([child.lat.val, child.lon.val],{draggable: true});
+
+        popup = marker.bindPopup(child.content);
+
+        marker.on('click', function(){marker.openPopup();});
+
+        marker.on('dragend',function(){
+            var loc = marker.getLatLng();
+            ws.send(
+                             JSON.stringify(
+                                 {uri: child.uri,
+                                  binding: child.lat.binding,
+                                  data: loc.lat,
+                                  type:"update"}));
+            ws.send(
+                             JSON.stringify(
+                                 {uri: child.uri,
+                                  binding: child.lon.binding,
+                                  data: loc.lng,
+                                  type:"update"}));
+            });
+
+
+        addBound(child.lon.binding, child.lon.uri,
+                 {"update": function(val){
+                     var lat = marker.getLatLng().lat;
+                     marker.setLatLng([lat,val]);}});
+
+        addBound(child.lat.binding, child.lat.uri,
+                 {"update": function(val){
+                     var lng = marker.getLatLng().lng;
+                     marker.setLatLng([val,lng]);}});
+
+
+        marker.addTo(map);
+
+        }catch(e){}
+        });
+
+        //}
+    });
 
 }
 

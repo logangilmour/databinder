@@ -70,12 +70,12 @@
                    :uri (:value command)
                    :value
                    (interpreter expanded-view binding
-                    data
-                    (m/res (:uri command))
-                    (if (= (:type command) "update")
-                      (m/plit (:value command))
-                      (m/res (:value command)))
-                    url)
+                                data
+                                (m/res (:uri command))
+                                (if (= (:type command) "update")
+                                  (m/plit (:value command))
+                                  (m/res (:value command)))
+                                url)
                    :binding
                    (.toString binding))
                  (assoc command

@@ -21,7 +21,7 @@
     (. ResourceFactory createResource uri)))
 
 (defn plit [val]
-  (. ResourceFactory createPlainLiteral val))
+  (. ResourceFactory createPlainLiteral (str val)))
 
 (defn write-out [model]
   (with-open [out (io/output-stream "/Users/logangilmour/test.rdf")]

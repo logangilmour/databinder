@@ -3,7 +3,7 @@
    [clojure.java.io :as io]
    [hiccup.core :as hic])
   (:import
-   [org.mozilla.javascript Context ScriptableObject Function NativeArray]))
+   [org.mozilla.javascript Context ScriptableObject Function NativeArray NativeJSON]))
 
 (def js-env (atom nil))
 
@@ -12,7 +12,7 @@
         scope (.initStandardObjects cx)]
     (.evaluateReader cx scope (io/reader (io/resource "mustache.js")) "mustache.js" 1 nil)
     (.evaluateReader cx scope (io/reader (io/resource "underscore.js")) "mustache.js" 1 nil)
-    (.evaluateReader cx scope (io/reader (io/resource "templates.js")) "templates.js" 1 nil)
+    (.evaluateReader cx scope (io/reader "templates.js") "templates.js" 1 nil)
     (swap! js-env (fn [old] {:context cx :scope scope}))))
 
 (defn js-array [coll]
@@ -43,5 +43,10 @@
     (Context/exit)
     (.get scope "ret" scope)))
 
-
-(template-env)
+(defn stringify [val]
+  (let [cx (Context/enter)
+        shared-scope (:scope @js-env)
+        scope (.newObject cx shared-scope)
+        ret (NativeJSON/stringify cx scope val nil nil)]
+    (Context/exit)
+    ret))

@@ -38,8 +38,7 @@ function stringURL(url){
    var path = "";
    if(url.path){
        path=url.path.join("/");
-   }
-   return (url.scheme || "")+(url.authority || "")+path+(url.query||"")+(url.fragment||"");
+   }   return (url.scheme || "")+(url.authority || "")+path+(url.query||"")+(url.fragment||"");
 }
 
 function writeIndex(context){
@@ -86,6 +85,11 @@ var projector = flat(Mustache.compile(
 + "data-uri='{{{uri}}}'  "
 + "data-binding='{{{binding}}}'>{{#untitled}}{{{children}}}{{/untitled}}</a>" ));
 
+var leafMap = flat(Mustache.compile(
+"<div class='leaf-map' data-uri='{{uri}}' data-binding='{{binding}}' style='height:200px' data-children='{{children}}'/>"));
+
+
+
 var div = flat(Mustache.compile(
 "<div data-binding='{{{binding}}} data-uri='{{{uri}}}' class='{{{classes}}}'>{{{children}}}</div>"));
 
@@ -98,10 +102,10 @@ var li = flat(Mustache.compile(
 + "{{{children}}}</li>"));
 
 var column8 = flat(Mustache.compile(
-"<div class='span8'>{{{children}}}</div>"));
+"<div class='span8' data-uri='{{{uri}}}' data-binding='{{{binding}}}'>{{{children}}}</div>"));
 
 var column4 = flat(Mustache.compile(
-"<div class='span4'>{{{children}}}</div>"));
+"<div class='span6' data-uri='{{{uri}}}' data-binding='{{{binding}}}'>{{{children}}}</div>"));
 
 var row = flat(Mustache.compile(
 "<div class='row'>{{{children}}}</div>"));

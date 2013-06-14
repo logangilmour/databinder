@@ -7,7 +7,8 @@
    databinder.rdf
    [databinder.interpreter :only (interpreter)]
    [databinder.preprocessor :only (preprocess)]
-   [databinder.synchronize :only (synchronize edit)])
+   [databinder.synchronize :only (synchronize edit)]
+   [databinder.template :only (template-env)])
   (:require
    [compojure.route :as route]
    [hiccup.core :as hic]
@@ -27,6 +28,8 @@
 @prefix n: <http://logangilmour.com/bootstrap-widgets/nav-bar#> .
 @prefix f: <http://logangilmour.com/filter#> .
 @prefix u: <http://logangilmour.com/uri#> .
+@prefix m: <http://logangilmour.com/map#> .
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
 
 
 :root :name \"root\" .
@@ -144,7 +147,7 @@ w:nav-item rdfs:subClassOf :view ;
                  [a w:active ;
                   w:url w:url]
                  [a w:projector;
-:debug \"true\";
+
                   :uri [a u:writer; :children (w:url)];
                   :children :children])] .
 
@@ -176,15 +179,13 @@ w:div rdfs:subClassOf :template ;
   :js \"emit(div(this));\" .
 
 #n:tab-panel rdfs:subClassOf :view ;
-#  :param n:tab-set, n:tab ;
+#  :param n:tab-set, n:tab , n:base;
 #  :base
 #  [a w:plain;
-#     :root n:tab-panel;
+#     :root n:base;
 #     :children (
-#     [:subject n:children;
-#      :children (
-#        [a n:nav-bar; n:tab-binding n:has; n:tab n:tab; w:url w:url]
-#        [a w:div; w:classes \"container\"; :children n:children])])].
+#        [a n:nav-bar; n:tab-binding n:has-tab; n:tab n:tab; w:url w:url]
+#        [a w:div; w:classes])].
 
 
 n:nav-bar rdfs:subClassOf :view ;
@@ -207,7 +208,7 @@ n:pane rdfs:subClassOf :view ;
   :base
     [a w:div;
     :root [a u:reader; :children (w:url)];
-     #:filter [a f:equals; f:val n:resource];
+     :filter [a f:equals; f:val n:resource];
      w:classes \"container\";
      :children :children].
 
@@ -326,6 +327,28 @@ u:update rdfs:domain u:updater .
 w:tester rdfs:subClassOf :template;
   :js \"emit(JSON.stringify(this));\".
 
+m:map rdfs:subClassOf :template;
+  :js \"emit(leafMap(this))\".
+
+m:marker- rdfs:subClassOf :template;
+  :js \"emit({lat: children[0], lon: children[1], content: children[2], 'uri': uri, 'binding': binding});\".
+
+m:num rdfs:subClassOf :template;
+  :js \"emit({'val': children[0], 'uri': uri, 'binding': binding});\".
+
+
+m:marker rdfs:subClassOf :view;
+  :param m:content;
+  :base
+    [a m:marker-;
+     :children ([a m:num; :children ([:subject geo:lat])]
+                [a m:num; :children ([:subject geo:long])]
+                m:content)].
+
+w:json rdfs:subClassOf :template;
+  :js \"emit(JSON.stringify(JSON.decycle(this.children[0][0])));\".
+w:json-l rdfs:subClassOf :template;
+  :js \"emit(JSON.stringify(JSON.decycle(this.children)));\".
 "
 
              ))
@@ -370,12 +393,18 @@ ex:thing a u:reader; :children ([u:index 1]).
 @prefix n: <http://logangilmour.com/bootstrap-widgets/nav-bar#> .
 @prefix f: <http://logangilmour.com/filter#> .
 @prefix u: <http://logangilmour.com/uri#> .
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix m: <http://logangilmour.com/map#> .
 
 :application a ex:foaf-manager.
 
-ex:base ex:hastab foaf:Person .
+ex:base ex:hastab ex:Person-tab .
 
-foaf:Person ex:label \"People\" .
+ex:Person-tab ex:label \"People\" .
+
+ex:base ex:hastab ex:Map-tab .
+
+ex:Map-tab ex:label \"Map\" .
 
 ex:foaf-manager rdfs:subClassOf :view ;
 :base [a w:plain;
@@ -387,12 +416,27 @@ ex:foaf-manager rdfs:subClassOf :view ;
          w:url [u:index 1]]
 
          [a n:pane;
-          n:resource foaf:Person;
+          n:resource ex:Person-tab ;
           w:url [u:index 1];
-          :children (ex:types)])].
+          :children (ex:types)]
+         [a n:pane;
+          n:resource ex:Map-tab ;
+          w:url [u:index 1];
+          :children (ex:map)])].
+
+ex:map a w:column8 ;
+  :root foaf:Person ;
+  :children (
+    [a m:map;
+      :children
+         ([a w:json; :children
+            ([:object rdf:type; a :json-binding;
+          :children
+           ([a m:marker; m:content ex:fullName])])])]).
 
 
 ex:types a tm:type-manager;
+  :root foaf:Person;
   w:label \"People\";
   tm:item ex:fullName;
   w:url [u:index 2];
@@ -418,6 +462,14 @@ ex:types a tm:type-manager;
      a w:text-field;
      :children ([:subject foaf:status])]
 
+    [w:label \"Lat\" ;
+     a w:text-field;
+     :children ([:subject geo:lat])]
+
+    [w:label \"Long\" ;
+     a w:text-field;
+     :children ([:subject geo:long])]
+
     [a pl:list;
      w:label \"Knows\";
      pl:binding [:subject foaf:knows];
@@ -434,7 +486,9 @@ ex:types a tm:type-manager;
           ex:fullName
           [a cb:relator;
            cb:binding [:object foaf:knows];
-           w:url [u:index 2]] ) ] ) ] ).
+           w:url [u:index 2]] ) ] ) ]
+     [a m:map;
+      :children ([a w:json-l; :children ([a m:marker; m:content ex:fullName])])]).
 
 ex:fullName a w:join-text;
   w:join-with \" \";
@@ -459,13 +513,15 @@ ex:fullName a w:join-text;
      [:meta {:name "viewport" :content "width=device-width, initial-scale=1.0"}]
 
      [:link {:href "/css/bootstrap.min.css" :rel "stylesheet" :media "screen"}]
+     [:link {:rel "stylesheet" :href "http://cdn.leafletjs.com/leaflet-0.5/leaflet.css"}]
      [:link {:href "/css/datepicker.css" :rel "stylesheet" :media "screen"}]
-     [:title "FIXME"]]
+     [:title "FIXME"]
+     [:script {:type "text/javascript" :src "/js/jquery.min.js"}]]
     [:body body
-     [:script {:type "text/javascript" :src "/js/jquery.min.js"}]
      [:script {:type "text/javascript" :src "/js/bootstrap.min.js"}]
      [:script {:type "text/javascript" :src "/js/bootstrap-datepicker.js"}]
      [:script {:type "text/javascript" :src "/js/underscore-min.js"}]
+     [:script {:type "text/javascript" :src "http://cdn.leafletjs.com/leaflet-0.5/leaflet.js"}]
      [:script {:type "text/javascript" :src "/js/update.js"}]]
 
     ]
@@ -530,6 +586,7 @@ ex:fullName a w:join-text;
   [& args]
   (def expanded-example (preprocess example-view widgets))
   (def data (m/union (m/default-model) (:model expanded-example)))
+  (template-env)
   (start-http-server (wrap-ring-handler main-routes)
                      {:port 8080 :websocket true}))
 
