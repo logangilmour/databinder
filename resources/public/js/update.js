@@ -177,6 +177,7 @@ function setup(){
                                   type:"delete"}));
                  });
     leafMap();
+    graph();
 
 }
 
@@ -191,7 +192,7 @@ function leafMap(){
             maxZoom: 18
         }).addTo(map);
 
-        var markers = $(el).data("markers");
+        var markers = $(el).data("markers").list;
         //for (child in children) {
         _.map(markers, function(child){
         try{
@@ -240,3 +241,167 @@ function leafMap(){
 }
 
 setup();
+
+function graph(){
+    d3.selectAll(".labelGraph").each(function(d, i){
+    var width = 960,
+    height = 500;
+
+var color = d3.scale.category10();
+
+var nodes = [],
+    links = [];
+
+var force = d3.layout.force()
+    .nodes(nodes)
+    .links(links)
+    .charge(-400)
+    .linkDistance(120)
+    .size([width, height])
+    .on("tick", tick);
+
+var svg = d3.select("div.labelGraph").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+
+        var node = svg.selectAll(".node"),
+            link = svg.selectAll(".link");
+
+
+        var nodeset = JSON.parse(this.dataset.nodes);
+        var nodemap = {};
+
+
+
+
+// 1. Add three nodes and three links.
+setTimeout(function() {
+
+
+        _.map(nodeset.list,function(node){
+            if(node.uri){
+                var built = {id: node.uri, label:node.label};
+                nodemap[node.uri] = built;
+                nodes.push(built);
+                console.log("Binding: " + node.uri+ ", " +node.binding);
+                addBound(node.binding,node.uri,
+                         {"update": function(value){
+                             built.label=value;
+                             start();}});
+                addBound(node.children.binding,node.uri,
+                         {"create": function(value){
+
+                             var val = JSON.parse(value.substring(0,value.length-1));
+                             links.push({source: nodemap[node.uri], target: nodemap[val.uri]});
+                             start();},
+                          "delete": function(val){
+                              _.map(links,function(v,i){
+                                  console.log(v);
+                                  if(v.target==nodemap[val] && v.source==nodemap[node.uri]){
+                                      links.splice(i,i+1);
+                                      start();
+                                      return;
+                                  }
+                              });
+                          }});
+            }
+        });
+
+    _.map(nodeset.list,function(node){
+
+        if(node.uri){
+            var n1 = nodemap[node.uri];
+            _.map(node.children.list,function(child){
+                if(nodemap[child.uri]){
+
+                    var n2 = nodemap[child.uri];
+
+                    links.push({source: n1, target: n2});
+
+                }
+            });
+        }
+    });
+
+    addBound(nodeset.binding,nodeset.uri,
+             {"create": function(value){
+                 var node = JSON.parse(value.substring(0,value.length-1));
+                 var built = {id: node.uri, label:node.label};
+                 nodes.push(built);
+                 nodemap[node.uri]= built;
+                 addBound(node.binding,node.uri,
+                         {"update": function(value){
+                             built.label=value;
+                             start();}});
+                 addBound(node.children.binding, node.uri,
+                          {"create": function(value){
+
+                              var val = JSON.parse(value.substring(0,value.length-1));
+                              links.push({source: nodemap[node.uri], target: nodemap[val.uri]});
+
+                              start();},
+                           "delete": function(val){
+                               _.map(links,function(v,i){
+                                   if(v.target==nodemap[val] && v.source==nodemap[node.uri]){
+                                       links.splice(i,i+1);
+                                       start();
+                                       return;
+                                   }
+                               });
+                           }});
+                 start();},
+              "delete": function(val){
+                  _.map(nodes,function(v,i){
+                      if(nodemap[val]==v){
+                          nodes.splice(i,i+1);
+                          var j=0;
+                          while(j<links.length){
+                              if(links[j].source==nodemap[val]
+                                 || links[j].target==nodemap[val]){
+                                  links.splice(j,j+1);
+
+                              }else{
+                                  j+=1;
+                              }
+                          }
+
+                          delete nodemap[val];
+                          start();
+                          return;
+                      }
+                  });
+              }});
+
+    start();
+}, 0);
+
+function start() {
+  link = link.data(force.links(), function(d) { return d.source.id + "-" + d.target.id; });
+  link.enter().insert("line", ".node").attr("class", "link");
+  link.exit().remove();
+
+  node = node.data(force.nodes(), function(d) { return d.id;});
+  node.text(function(d, i) {
+                                return d.label;
+                        });
+  //node.enter().append("circle").attr("class", function(d) { return "node " + d.id; }).attr("r", 8);
+  node.enter().append("svg:text").text(function(d, i) {
+                                return d.label;
+                        }).style("fill", "#555").style("font-family", "Arial").style("font-size", 12);
+  node.exit().remove();
+
+  force.start();
+}
+
+function tick() {
+  node.attr("x", function(d) { return d.x; })
+      .attr("y", function(d) { return d.y; });
+
+  link.attr("x1", function(d) { return d.source.x; })
+      .attr("y1", function(d) { return d.source.y; })
+      .attr("x2", function(d) { return d.target.x; })
+      .attr("y2", function(d) { return d.target.y; });
+}
+    });
+}

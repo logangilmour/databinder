@@ -175,6 +175,11 @@ if (typeof JSON.retrocycle !== 'function') {
     };
 }
 
+function stringalize(value, replacements){
+    val = JSON.stringify(value);
+    return _.reduce(replacements,function(memo, v, k){return memo.replace('"$'+k+'$"',v);}, val);
+
+}
 
 
 
@@ -300,6 +305,9 @@ var projector = flat(Mustache.compile(
 
 var leafMap = Mustache.compile(
 "<div class='leaf-map' data-uri='{{uri}}' data-binding='{{binding}}' style='height:200px' data-markers='{{children.0}}'/>");
+
+var labelGraph = Mustache.compile(
+"<div class='labelGraph' data-uri='{{uri}}' data-binding='{{binding}}' width='640' height='480' data-nodes='{{children.0}}'/>");
 
 var div = flat(Mustache.compile(
 "<div data-binding='{{{binding}}} data-uri='{{{uri}}}' class='{{{classes}}}'>{{{children}}}</div>"));

@@ -31,6 +31,8 @@
         a (.setPrototype scope shared-scope)
         b (.setParentScope scope nil)]
 
+    (println js)
+
     (mapper scope params)
 
     (ScriptableObject/putProperty scope "uri" resource)

@@ -30,6 +30,7 @@
 @prefix u: <http://logangilmour.com/uri#> .
 @prefix m: <http://logangilmour.com/map#> .
 @prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix g: <http://logangilmour.com/graph#> .
 
 
 :root :name \"root\" .
@@ -324,6 +325,24 @@ u:update :name \"update\" .
 
 u:update rdfs:domain u:updater .
 
+w:s-brackets rdfs:subClassOf :template;
+  :js \"emit(stringalize({list:'$children$','uri':uri,'binding':binding},{'children':'['+children[0].substring(0,children[0].length-1)+']'}));\".
+
+w:commas rdfs:subClassOf :template;
+  :js \"emit(children[0]+',')\".
+
+
+w:j-list rdfs:subClassOf :view;
+  :param w:j-binding;
+  :base
+    [a w:s-brackets;
+     :children (w:j-binding)].
+
+w:j-binding :children ([a w:commas; :children :children]).
+
+w:f-list rdfs:subClassOf :template;
+  :js \"emit(stringalize({list:['$children$'],'uri':uri,'binding':binding},{'children':children[0]}));\".
+
 w:tester rdfs:subClassOf :template;
   :js \"emit(JSON.stringify(this));\".
 
@@ -331,11 +350,10 @@ m:map rdfs:subClassOf :template;
   :js \"emit(leafMap(this))\".
 
 m:marker- rdfs:subClassOf :template;
-  :js \"emit({lat: children[0], lon: children[1], content: children[2], 'uri': uri, 'binding': binding});\".
+  :js \"emit(stringalize({lat: '$children0$', lon: '$children1$', content: children[2], 'uri': uri, 'binding': binding}, {'children0':children[0],'children1':children[1]}));\".
 
 m:num rdfs:subClassOf :template;
-  :js \"emit({'val': children[0], 'uri': uri, 'binding': binding});\".
-
+  :js \"emit(JSON.stringify({val: children[0].length>0?JSON.parse(children[0]):[], 'uri': uri, 'binding': binding}));\".
 
 m:marker rdfs:subClassOf :view;
   :param m:content;
@@ -345,10 +363,21 @@ m:marker rdfs:subClassOf :view;
                 [a m:num; :children ([:subject geo:long])]
                 m:content)].
 
-w:json rdfs:subClassOf :template;
-  :js \"emit(JSON.stringify(JSON.decycle(this.children[0][0])));\".
-w:json-l rdfs:subClassOf :template;
-  :js \"emit(JSON.stringify(JSON.decycle(this.children)));\".
+g:graph rdfs:subClassOf :template;
+  :js \"emit(labelGraph(this));\".
+
+g:node rdfs:subClassOf :view;
+  :param g:edge, g:label;
+  :base
+    [a g:node-;
+     :children ([a w:j-list; w:j-binding g:edge; :children ([a g:node--])]
+                g:label)].
+
+g:node- rdfs:subClassOf :template;
+  :js \"emit(stringalize({'children':'$children0$', 'uri':uri,'binding':binding, 'label':children[1]},{'children0':children[0]}));\".
+g:node-- rdfs:subClassOf :template;
+  :js \"emit(JSON.stringify({'uri':uri,'binding':binding}));\".
+
 "
 
              ))
@@ -395,6 +424,7 @@ ex:thing a u:reader; :children ([u:index 1]).
 @prefix u: <http://logangilmour.com/uri#> .
 @prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
 @prefix m: <http://logangilmour.com/map#> .
+@prefix g: <http://logangilmour.com/graph#> .
 
 :application a ex:foaf-manager.
 
@@ -405,6 +435,12 @@ ex:Person-tab ex:label \"People\" .
 ex:base ex:hastab ex:Map-tab .
 
 ex:Map-tab ex:label \"Map\" .
+
+ex:base ex:hastab ex:Graph-tab .
+
+ex:Graph-tab ex:label \"Graph\" .
+
+
 
 ex:foaf-manager rdfs:subClassOf :view ;
 :base [a w:plain;
@@ -422,17 +458,30 @@ ex:foaf-manager rdfs:subClassOf :view ;
          [a n:pane;
           n:resource ex:Map-tab ;
           w:url [u:index 1];
-          :children (ex:map)])].
+          :children (ex:map)]
+         [a n:pane;
+          n:resource ex:Graph-tab ;
+          w:url [u:index 1];
+          :children (ex:graph)])].
+
+ex:graph a w:column8 ;
+  :root foaf:Person ;
+  :children (
+    [a g:graph;
+     :children (
+          [a w:j-list; w:j-binding [:object rdf:type];
+            :children
+              ([a g:node; g:edge [:subject foaf:knows]; g:label [:subject foaf:givenName]])])]).
 
 ex:map a w:column8 ;
   :root foaf:Person ;
   :children (
     [a m:map;
       :children
-         ([a w:json; :children
-            ([:object rdf:type; a :json-binding;
-          :children
-           ([a m:marker; m:content ex:fullName])])])]).
+            ([a w:j-list;
+              w:j-binding [:object rdf:type];
+              :children
+                ([a m:marker; m:content ex:fullName])])]).
 
 
 ex:types a tm:type-manager;
@@ -488,7 +537,10 @@ ex:types a tm:type-manager;
            cb:binding [:object foaf:knows];
            w:url [u:index 2]] ) ] ) ]
      [a m:map;
-      :children ([a w:json-l; :children ([a m:marker; m:content ex:fullName])])]).
+      :children
+       ([a w:f-list;
+         :children
+            ([a m:marker; m:content ex:fullName])])]).
 
 ex:fullName a w:join-text;
   w:join-with \" \";
@@ -515,6 +567,7 @@ ex:fullName a w:join-text;
      [:link {:href "/css/bootstrap.min.css" :rel "stylesheet" :media "screen"}]
      [:link {:rel "stylesheet" :href "http://cdn.leafletjs.com/leaflet-0.5/leaflet.css"}]
      [:link {:href "/css/datepicker.css" :rel "stylesheet" :media "screen"}]
+     [:link {:href "/css/graph.css" :rel "stylesheet" :media "screen"}]
      [:title "FIXME"]
      [:script {:type "text/javascript" :src "/js/jquery.min.js"}]]
     [:body body
@@ -522,6 +575,7 @@ ex:fullName a w:join-text;
      [:script {:type "text/javascript" :src "/js/bootstrap-datepicker.js"}]
      [:script {:type "text/javascript" :src "/js/underscore-min.js"}]
      [:script {:type "text/javascript" :src "http://cdn.leafletjs.com/leaflet-0.5/leaflet.js"}]
+     [:script {:type "text/javascript" :src "http://d3js.org/d3.v3.min.js"}]
      [:script {:type "text/javascript" :src "/js/update.js"}]]
 
     ]
