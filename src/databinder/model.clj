@@ -188,6 +188,15 @@
     (skolemize-model model)
     model))
 
+(defn to-statements [model]
+  (doall
+   (map
+    (fn [statement]
+      {:subject (stringify (.getSubject statement))
+       :predicate (stringify (.getPredicate statement))
+       :object (stringify (.getObject statement))})
+    (iterator-seq (.listStatements model)))))
+
 (defn default-model []
   (if ds
     (.close ds))
