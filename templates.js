@@ -223,7 +223,7 @@ function stringURL(url){
    }   return (url.scheme || "")+(url.authority || "")+path+(url.query||"")+(url.fragment||"");
 }
 
-function writeIndex(context){
+eoofunction writeIndex(context){
     var u = parseURL(context.url);
     var i = parseInt(context.children[0].index)+1;
     u.path[i]=encodeURIComponent(context.uri);
