@@ -22,6 +22,8 @@ ex:test
   :name \"test\";
   :type :list;
   :property ex:prop;
+  :from \"f\";
+  :to \"t\";
   :keyfn \"(fn [x] (str (:prop1 x)))\";
   :predicate ex:stupid.
 
@@ -67,13 +69,17 @@ ex:one ex:stupid ex:other.
                          "propertybinding" "properties"
                          "reversebinding" "reverse"
                          "keyfnbinding" "keyfn"
+                         "frombinding" "from"
+                         "tobinding" "to"
                          }}
    "typebinding" {:down {"predicatebinding" (bind :literal)
                          "namebinding" (bind :literal)
                          "typebinding" (bind :literal)
                          "reversebinding" (bind :literal)
                          "propertybinding" (bind :list)
-                         "keyfnbinding" (bind :function)}}
+                         "keyfnbinding" (bind :function)
+                         "frombinding" (bind :literal)
+                         "tobinding" (bind :literal)}}
    "predicatebinding" {:down {"reversebinding" (bind :reverse)
                               "typebinding" (bind :type)
                               "frombinding" (bind :from)
@@ -97,7 +103,8 @@ ex:one ex:stupid ex:other.
                                                            "predicatebinding" #{"predicatebinding"}
                                                            "propertybinding" #{"propertybinding"}
                                                            "keyfnbinding" #{"keyfnbinding"}
-
+                                                           "frombinding" #{"frombinding"}
+                                                           "tobinding" #{"tobinding"}
                                                            )}
                       :up {"namebinding" #{"propertybinding"}
                            "typebinding" #{"propertybinding"}
@@ -105,6 +112,8 @@ ex:one ex:stupid ex:other.
                            "predicatebinding" #{"propertybinding"}
                            "keyfnbinding" #{"propertybinding"}
                            "propertybinding" #{"propertybinding"}
+                           "frombinding" #{"propertybinding"}
+                           "tobinding" #{"propertybinding"}
                            }}})
 
 (defn unparent [view]
