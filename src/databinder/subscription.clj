@@ -13,12 +13,16 @@
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
 
 
+ex:base
+  :name \"base\";
+  :type :list;
+  :property ex:test.
 
 ex:test
   :name \"test\";
   :type :list;
   :property ex:prop;
-  :keyfn \"(fn [x] (str x x))\";
+  :keyfn \"(fn [x] (str (:prop1 x)))\";
   :predicate ex:stupid.
 
 ex:prop
@@ -36,7 +40,23 @@ ex:prop
 @prefix ex: <http://logangilmour.com/example-view#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
 
-ex:one ex:stupid [ex:rep \"dumb\"].
+ex:other ex:rep \"wat\".
+ex:thing ex:rep \"dumb\".
+
+")))
+
+(def earlytest
+  (m/to-statements (m/to-model "
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix : <http://logangilmour.com/data-binder#> .
+@prefix ex: <http://logangilmour.com/example-view#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+
+ex:one ex:stupid ex:thing.
+ex:one ex:stupid ex:other.
+
+
 
 ")))
 
@@ -45,7 +65,6 @@ ex:one ex:stupid [ex:rep \"dumb\"].
                          "typebinding" "type"
                          "namebinding" "name"
                          "propertybinding" "properties"
-                         "parentbinding" "parent"
                          "reversebinding" "reverse"
                          "keyfnbinding" "keyfn"
                          }}
@@ -54,7 +73,6 @@ ex:one ex:stupid [ex:rep \"dumb\"].
                          "typebinding" (bind :literal)
                          "reversebinding" (bind :literal)
                          "propertybinding" (bind :list)
-                         "parentbinding" (bind :list)
                          "keyfnbinding" (bind :function)}}
    "predicatebinding" {:down {"reversebinding" (bind :reverse)
                               "typebinding" (bind :type)
@@ -63,7 +81,6 @@ ex:one ex:stupid [ex:rep \"dumb\"].
                               "namebinding" (bind :name)
                               "predicatebinding" (bind :predicate)
                               "propertybinding" (bind :property)
-                              "parentbinding" (bind :property)
                               "keyfnbinding" (bind :keyfn)}
                        :up {(bind :reverse) #{"reversebinding"}
                             (bind :type) #{"typebinding"}
@@ -74,26 +91,29 @@ ex:one ex:stupid [ex:rep \"dumb\"].
                             (bind :property) #{"propertybinding"}
                             (bind :keyfn) #{"keyfnbinding"}
                             }}
-   "reversebinding" {:down {"parentbinding" "true"}
-                     :up {"true" #{"parentbinding"}}}
-   "propertybinding" {:down {"propertybinding" (sorted-map "reversebinding" "reversebinding"
-                                                           "namebinding" "namebinding"
-                                                           "typebinding" "typebinding"
-                                                           "predicatebinding" "predicatebinding"
-                                                           "propertybinding" "propertybinding"
-                                                           "keyfnbinding" "keyfnbinding"
-                                                           "parentbinding" "parentbinding"
+   "propertybinding" {:down {"propertybinding" (sorted-map "reversebinding" #{"reversebinding"}
+                                                           "namebinding" #{"namebinding"}
+                                                           "typebinding" #{"typebinding"}
+                                                           "predicatebinding" #{"predicatebinding"}
+                                                           "propertybinding" #{"propertybinding"}
+                                                           "keyfnbinding" #{"keyfnbinding"}
+
                                                            )}
                       :up {"namebinding" #{"propertybinding"}
                            "typebinding" #{"propertybinding"}
                            "reversebinding" #{"propertybinding"}
                            "predicatebinding" #{"propertybinding"}
                            "keyfnbinding" #{"propertybinding"}
-                           "parentbinding" #{"propertybinding"}
                            "propertybinding" #{"propertybinding"}
                            }}})
 
-
+(defn unparent [view]
+  (cond (map? view)
+        (into {} (map (fn [[k v]] [k (unparent v)]) (dissoc view :$parents)))
+        (seq? view)
+        (map unparent view)
+        :default
+        view))
 
 
 (def bootstrap
@@ -119,17 +139,46 @@ ex:one ex:stupid [ex:rep \"dumb\"].
 ;; calling render in here will be reasonable.
 
 
+(defn keychanges [sub view binding]
+  (if (= (:type binding) (bind :list))
+    (let [k ((or (:keyfn binding) (fn [val] (:$id val))) (unparent view))]
+
+      (-> sub
+          (update-in [(:$id binding) :down (:$id (first (:$parents view)))]
+                     (fn [val] (let [keyed (update-in val [k] #(conj (or % #{}) (:$id view)))
+                                    old (get-in sub [(:$id binding) :ks (:$id view)])
+                                    removed (update-in keyed [old]
+                                                       #(disj % (:$id view)))]
+                                (if (empty? (get removed old))
+                                  (dissoc removed old)
+                                  removed))))
+          (assoc-in [(:$id binding) :ks (:$id view)] k)))
+    (keychanges sub (first (:$parents view)) (first (:$parents binding)))))
+
 (defn insert [sub statement]
   (let [bindings (get-in sub ["predicatebinding" :up (:predicate statement)])]
     (reduce (fn [tree binding]
               (let [binding (construct sub binding bootstrap {})
                     subject (if (:reverse binding) (:object statement) (:subject statement))
                     object (if (:reverse binding) (:subject statement) (:object statement))]
-                (-> tree
-                    (update-in [(:$id binding) :down subject] #(if (= (:type binding) (bind :list))
-                                                                 (assoc (or % (sorted-map)) nil object)
-                                                                 object))
-                    (update-in [(:$id binding) :up object] #(conj (or % #{}) subject))))) sub bindings)))
+                (let [updated
+                      (-> tree
+                          (update-in [(:$id binding) :down subject]
+                                     (fn [val] (if (= (:type binding) (bind :list))
+                                           (update-in (or val (sorted-map)) [nil] #(conj
+                                                                                  (or % #{})
+                                                                                  object))
+                                           object)))
+                          (update-in [(:$id binding) :up object] #(conj (or % #{}) subject)))]
+                  (if (= (:type binding) (bind :list))
+                    (keychanges updated
+                                (construct updated object binding {})
+                                binding)
+                    (keychanges updated
+                                (let [out (construct updated subject (first (:$parents binding)) {})]
+                                  (println "AHAHAHAHA  " out "\n\n ==== \n" binding "\n")
+                                  out)
+                                (first (:$parents binding))))))) sub bindings)))
 
 (defn batch [sub statements]
   (reduce (fn [tree statement]
@@ -137,11 +186,10 @@ ex:one ex:stupid [ex:rep \"dumb\"].
           sub
           statements))
 
-(defn ss [] (batch (batch base test-schema) test-statements))
+(defn ss [] (batch (batch (batch base test-schema) earlytest) test-statements))
 
 
 (defn construct [sub node binding url-params]
-
   (cond
    (= (:type binding) (bind :literal))
    node
@@ -154,7 +202,7 @@ ex:one ex:stupid [ex:rep \"dumb\"].
                      (:properties binding)))
      :$id node
      :$binding (:$id binding)
-     :$parents (map (fn [parent] (construct sub parent (first (:$parents binding)) url-params)) (get-in sub [(:$id (first (:$parents binding))) :up node]))
+     :$parents (map (fn [parent] (construct sub parent (first (:$parents binding)) url-params)) (get-in sub [(:$id binding) :up node])) ;;TODO fix that we only allow one parent in the binding.
      )))
 
 (defn render [sub node binding url-params]
@@ -164,10 +212,11 @@ ex:one ex:stupid [ex:rep \"dumb\"].
       (if (= (:type binding) (bind :list))
         (map (fn [sub-node] (construct sub sub-node binding url-params))
              (let [from (if (:from binding) (get url-params (:from binding)))
-                   to (if (:to binding) (get url-params (:to binding)))]
+                   to (if (:to binding) (get url-params (:to binding)))
+                   flat (comp flatten (partial map (comp seq second)))]
                (cond
-                (and from to) (map second (subseq prop >= from <= to))
-                from (map second (subseq prop >= from))
-                to (map second (subseq prop <= to))
-                :default (vals prop))))
+                (and from to) (flat (subseq prop >= from <= to))
+                from (flat (subseq prop >= from))
+                to (flat (subseq prop <= to))
+                :default (flat prop))))
         (construct sub prop binding url-params)))))
