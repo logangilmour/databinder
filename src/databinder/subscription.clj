@@ -1,6 +1,7 @@
 (ns databinder.subscription
   (:use
-   databinder.rdf)
+   databinder.rdf
+   [lamina.core :only (channel permanent-channel enqueue map*)])
   (:require
    [databinder.model :as m] ))
 
@@ -118,7 +119,10 @@ ex:one ex:stupid ex:other.
 
 (defn unparent [view]
   (cond (map? view)
-        (into {} (map (fn [[k v]] [k (unparent v)]) (dissoc view :$parents)))
+        (into {} (map (fn [[k v]] [k (unparent v)])
+                      (-> view
+                          (dissoc :$parents)
+                          (assoc :$binding (:$id (:$binding view))))))
         (seq? view)
         (map unparent view)
         :default
@@ -148,54 +152,82 @@ ex:one ex:stupid ex:other.
 ;; calling render in here will be reasonable.
 
 
-(defn keychanges [sub view binding]
-  (if (= (:type binding) (bind :list))
-    (let [k ((or (:keyfn binding) (fn [val] (:$id val))) (unparent view))]
+(defn keychanges [sub view]
+  (let [binding (:$binding view)]
+   (if (= (:type binding) (bind :list))
+     (let [k ((or (:keyfn binding) (fn [val] (:$id val))) (unparent view))]
 
-      (-> sub
-          (update-in [(:$id binding) :down (:$id (first (:$parents view)))]
-                     (fn [val] (let [keyed (update-in val [k] #(conj (or % #{}) (:$id view)))
-                                    old (get-in sub [(:$id binding) :ks (:$id view)])
-                                    removed (update-in keyed [old]
-                                                       #(disj % (:$id view)))]
-                                (if (empty? (get removed old))
-                                  (dissoc removed old)
-                                  removed))))
-          (assoc-in [(:$id binding) :ks (:$id view)] k)))
-    (keychanges sub (first (:$parents view)) (first (:$parents binding)))))
+       (-> sub
+           (update-in [(:$id binding) :down (:$id (first (:$parents view)))]
+                      (fn [val] (let [keyed (update-in val [k] #(conj (or % #{}) (:$id view)))
+                                     removed (update-in keyed [(:$key view)]
+                                                        #(disj % (:$id view)))]
+                                 (if (empty? (get removed (:$key view)))
+                                   (dissoc removed (:$key view))
+                                   removed))))
+           (assoc-in [(:$id binding) :ks (:$id view)] k)))
+     (keychanges sub (first (:$parents view))))))
 
-(defn insert [sub statement]
+;;TODO make sure we can't have duplicates
+(defn insert [sub statement out]
   (let [bindings (get-in sub ["predicatebinding" :up (:predicate statement)])]
     (reduce (fn [tree binding]
               (let [binding (construct sub binding bootstrap {})
                     subject (if (:reverse binding) (:object statement) (:subject statement))
-                    object (if (:reverse binding) (:subject statement) (:object statement))]
-                (let [updated
-                      (-> tree
-                          (update-in [(:$id binding) :down subject]
-                                     (fn [val] (if (= (:type binding) (bind :list))
-                                           (update-in (or val (sorted-map)) [nil] #(conj
-                                                                                  (or % #{})
-                                                                                  object))
-                                           object)))
-                          (update-in [(:$id binding) :up object] #(conj (or % #{}) subject)))]
-                  (if (= (:type binding) (bind :list))
-                    (keychanges updated
-                                (construct updated object binding {})
-                                binding)
-                    (keychanges updated
-                                (let [out (construct updated subject (first (:$parents binding)) {})]
-                                  (println "AHAHAHAHA  " out "\n\n ==== \n" binding "\n")
-                                  out)
-                                (first (:$parents binding))))))) sub bindings)))
+                    object (if (:reverse binding) (:subject statement) (:object statement))
 
-(defn batch [sub statements]
+                    updated
+                    (-> tree
+                        (update-in [(:$id binding) :down subject]
+                                   (fn [val] (if (= (:type binding) (bind :list))
+                                              (update-in (or val (sorted-map)) [nil] #(conj
+                                                                                       (or % #{})
+                                                                                       object))
+                                              object)))
+                        (update-in [(:$id binding) :up object] #(conj (or % #{}) subject)))
+
+                    view (if (= (:type binding) (bind :list))
+                           (construct updated object binding {})
+                           (construct updated subject (first (:$parents binding)) {}))
+
+                    rekeyed (keychanges updated
+                                        view)]
+                (enqueue out [view {:resource subject :binding (:$id binding) :value object}])
+                rekeyed))
+            sub bindings)))
+
+(defn subscribe [sub node params]
+  )
+
+(defn matches [view params]
+  (and
+   (reduce #(or %1 %2) false (map #(matches % params) (:$parents view)))
+   (let [from (if (:from (:$binding view)) (get params (:from (:$binding view))))
+          to (if (:to (:$binding view)) (get params (:to (:$binding view))))
+          key (:$key view)]
+
+      (cond
+       (and from to) (and (>= (compare key from) 0) (<= (compare key to) 0))
+       from (>= (compare key from) 0)
+       to (<= (compare key to) 0)
+       :default true))))
+
+(defn changes [old-tree new-tree]
+  (-> new-tree
+      (assoc :$oldkey (:$key old-tree))
+      (assoc :$parents (map changes (:$parents old-tree) (:$parents new-tree)))))
+
+
+
+(defn batch [sub statements channel]
   (reduce (fn [tree statement]
-            (insert tree statement))
+            (insert tree statement channel))
           sub
           statements))
 
-(defn ss [] (batch (batch (batch base test-schema) earlytest) test-statements))
+(def ch (permanent-channel))
+
+(defn ss [] (batch (batch (batch base test-schema ch) earlytest ch) test-statements ch))
 
 
 (defn construct [sub node binding url-params]
@@ -210,7 +242,8 @@ ex:one ex:stupid ex:other.
                        [(keyword (:name sub-binding)) (render sub node sub-binding url-params)])
                      (:properties binding)))
      :$id node
-     :$binding (:$id binding)
+     :$binding binding
+     :$key (get-in sub [(:$id binding) :ks node])
      :$parents (map (fn [parent] (construct sub parent (first (:$parents binding)) url-params)) (get-in sub [(:$id binding) :up node])) ;;TODO fix that we only allow one parent in the binding.
      )))
 
